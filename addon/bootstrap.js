@@ -10,6 +10,7 @@ var chromeHandle;
 function install(data, reason) {}
 
 async function startup({ id, version, resourceURI, rootURI }, reason) {
+  Zotero.log(`[Gemini PDF] Plugin started up! Version: ${version}`); // Changed to Zotero.log
   var aomStartup = Components.classes[
     "@mozilla.org/addons/addon-manager-startup;1"
   ].getService(Components.interfaces.amIAddonManagerStartup);

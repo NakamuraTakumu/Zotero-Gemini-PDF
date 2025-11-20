@@ -1,5 +1,6 @@
 import { ZoteroToolkit } from "zotero-plugin-toolkit";
-import { config } from "../../package.json";
+import packageJson from "../../package.json";
+const config = packageJson.config;
 
 export { createZToolkit };
 

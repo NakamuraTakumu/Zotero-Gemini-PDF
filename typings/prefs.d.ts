@@ -9,6 +9,9 @@ declare namespace _ZoteroTypes {
     PluginPrefsMap: {
       "enable": boolean;
       "input": string;
+      "extensions.geminipdf.geminiApiKey": string;
+      "extensions.geminipdf.geminiSystemPrompt": string;
+      "extensions.geminipdf.contextWindowSize": number;
     };
   }
 }

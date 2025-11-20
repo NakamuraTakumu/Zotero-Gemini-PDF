@@ -3,6 +3,9 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'gemini-pdf-context-window-size-label'
+  | 'gemini-pdf-settings-title'
+  | 'gemini-pdf-system-prompt-label'
   | 'item-info-row-example-label'
   | 'item-section-example1-head-text'
   | 'item-section-example1-sidenav-tooltip'
@@ -13,10 +16,6 @@ export type FluentMessageId =
   | 'menuitem-label'
   | 'menuitem-submenulabel'
   | 'menupopup-label'
-  | 'pref-enable'
-  | 'pref-help'
-  | 'pref-input'
-  | 'pref-title'
   | 'prefs-table-detail'
   | 'prefs-table-title'
   | 'prefs-title'

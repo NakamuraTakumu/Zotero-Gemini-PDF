@@ -1,0 +1,213 @@
+:root {
+  --chat-bg: #fff;
+  --chat-text-color: #333;
+  --chat-border-color: #ddd;
+  --chat-input-bg: #fff;
+  --chat-input-border: #ccc;
+  --send-button-bg: #007bff;
+  --send-button-text: white;
+  --user-message-bg: #dcf8c6;
+  --bot-message-bg: #fff;
+  --bot-message-border: #eee;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chat-bg: #2e2e2e;
+    --chat-text-color: #eee;
+    --chat-border-color: #444;
+    --chat-input-bg: #3a3a3a;
+    --chat-input-border: #555;
+    --send-button-bg: #55aaff;
+    --send-button-text: white;
+    --user-message-bg: #4a6a3a;
+    --bot-message-bg: #3a3a3a;
+    --bot-message-border: #555;
+  }
+}
+
+*|div.chat-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%; /* Constrain width to parent */
+  overflow-x: hidden; /* Prevent horizontal overflow */
+  font-family: sans-serif;
+  background-color: var(--chat-bg);
+  padding: 10px;
+  box-sizing: border-box;
+  color: var(--chat-text-color);
+}
+*|div.chat-messages {
+  overflow-y: auto;
+  max-height: 200px; /* Initial limited height */
+  padding: 10px;
+  border: 1px solid var(--chat-border-color);
+  margin-bottom: 10px;
+  background-color: var(--chat-input-bg); /* Using input bg for messages area */
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+}
+*|div.chat-resizer {
+  height: 5px;
+  background-color: var(--chat-border-color);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  margin: 5px 0;
+}
+*|div.chat-input-area {
+  display: flex;
+  border-top: 1px solid var(--chat-border-color);
+  padding-top: 10px;
+}
+*|textarea.chat-input {
+  flex-grow: 1;
+  border: 1px solid var(--chat-input-border);
+  padding: 8px;
+  border-radius: 4px 0 0 4px;
+  background-color: var(--chat-input-bg);
+  color: var(--chat-text-color);
+}
+*|button.send-button {
+  padding: 8px 12px;
+  border: 1px solid var(--send-button-bg);
+  background: var(--send-button-bg);
+  color: var(--send-button-text);
+  cursor: pointer;
+  border-radius: 0 4px 4px 0;
+}
+*|button.send-button:hover {
+  background: #0056b3; /* Keep original hover for now, or define dark mode hover */
+}
+@media (prefers-color-scheme: dark) {
+  *|button.send-button:hover {
+    background: #3a8ad9; /* Dark mode hover */
+  }
+}
+
+*|div.message {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 18px;
+  word-wrap: break-word;
+  user-select: text; /* Explicitly allow text selection */
+}
+
+/* *|div.message > * { /* Apply to all direct children of .message */
+/*   word-break: break-all; */
+/* } */
+
+*|div.user-message {
+  background: var(--user-message-bg);
+  align-self: flex-end;
+  border-bottom-right-radius: 4px;
+}
+*|div.bot-message {
+  background: var(--bot-message-bg);
+  border: 1px solid var(--bot-message-border);
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+*|div.message p {
+  margin: 0;
+}
+
+*|div.message pre,
+*|div.message code,
+*|div.message pre code {
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* Basic Markdown styling */
+*|div.message h1,
+*|div.message h2,
+*|div.message h3,
+*|div.message h4,
+*|div.message h5,
+*|div.message h6 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+*|div.message h1 { font-size: 1.8em; }
+*|div.message h2 { font-size: 1.5em; }
+*|div.message h3 { font-size: 1.2em; }
+*|div.message h4 { font-size: 1em; }
+*|div.message h5 { font-size: 0.9em; }
+*|div.message h6 { font-size: 0.8em; }
+
+*|div.message ul,
+*|div.message ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 20px;
+}
+
+*|div.message li {
+  margin-bottom: 0.25em;
+}
+
+*|div.message pre {
+  background-color: var(--chat-input-bg); /* Use a slightly different background for code blocks */
+  border: 1px solid var(--chat-border-color);
+  border-radius: 4px;
+  padding: 10px;
+  overflow-x: auto; /* Enable horizontal scrolling for long lines */
+}
+
+*|div.message code {
+  font-family: monospace;
+  background-color: var(--chat-input-bg);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+*|div.message pre code {
+  background-color: transparent; /* Don't double background for code inside pre */
+  padding: 0;
+}
+
+*|div.message blockquote {
+  border-left: 4px solid var(--chat-border-color);
+  margin: 0.5em 0;
+  padding: 0.5em 10px;
+  color: var(--chat-text-color);
+}
+
+*|div.message table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+*|div.message th,
+*|div.message td {
+  border: 1px solid var(--chat-border-color);
+  padding: 8px;
+  text-align: left;
+}
+
+*|div.message th {
+  background-color: var(--chat-input-bg);
+}
+
+*|div.message a {
+  color: var(--send-button-bg); /* Use a link color */
+  text-decoration: underline;
+}
+
+*|div.message img {
+  max-width: 100%;
+  height: auto;
+}
+
+*|div.message hr {
+  border: none;
+  border-top: 1px solid var(--chat-border-color);
+  margin: 1em 0;
+}

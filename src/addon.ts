@@ -1,4 +1,5 @@
-import { config } from "../package.json";
+import packageJson from "../package.json";
+const config = packageJson.config;
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";

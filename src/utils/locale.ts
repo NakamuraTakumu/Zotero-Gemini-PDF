@@ -1,4 +1,5 @@
-import { config } from "../../package.json";
+import packageJson from "../../package.json";
+const config = packageJson.config;
 import { FluentMessageId } from "../../typings/i10n";
 
 export { initLocale, getString, getLocaleID };
