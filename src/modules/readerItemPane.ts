@@ -17,14 +17,6 @@ import {
 import { Content, Part } from "@google/genai";
 
 
-// Import OS module for file operations
-// const { ChromeUtils } = Components.utils.import(
-//   "resource://gre/modules/ChromeUtils.jsm"
-// );
-// const { PathUtils } = ChromeUtils.import(
-//   "resource://gre/modules/PathUtils.jsm"
-// );
-
 // chat用タブ
 export class ReaderItemPaneFactory {
   static async getOrCreateConversationAttachment(
@@ -61,8 +53,11 @@ export class ReaderItemPaneFactory {
     const conversationJsonString = JSON.stringify(initialConversation, null, 2);
     const filename = "gemini_conversation.json";
 
-    // Replaced PathUtils.join with a placeholder string to avoid compile errors
-    const tempFilePath = "DISABLED_PATH_FOR_DEBUGGING"; 
+    // Use Zotero's own methods to construct the temporary file path
+    const tempDir = Zotero.getTempDirectory();
+    const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
+    tempDir.append(tempFileName);
+    const tempFilePath = tempDir.path;
 
     try {
       await Zotero.File.putContentsAsync(tempFilePath, conversationJsonString);
@@ -327,12 +322,12 @@ export class ReaderItemPaneFactory {
           // adjustTextareaHeight();
 
           try {
-            // currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
-            //   actualParentItem,
-            //   currentConversation,
-            //   { addBotMessage, updateBotMessage }
-            // );
-            // await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
+            currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
+              actualParentItem,
+              currentConversation,
+              { addBotMessage, updateBotMessage }
+            );
+            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
           } catch (syncError: any) {
             Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
             addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
