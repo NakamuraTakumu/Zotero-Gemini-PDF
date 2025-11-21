@@ -2,6 +2,7 @@
 import { createZToolkit } from "../utils/ztoolkit";
 import { getPref } from "../utils/prefs";
 import { config } from "../../package.json";
+import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
 
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
@@ -12,9 +13,19 @@ export function buildReaderPopup(
   const button = ztoolkit.UI.createElement(doc, "button", {
     namespace: "html",
     id: "gemini-pdf-popup-button",
-    classList: ["toolbar-button", "gemini-selection-button"],
     properties: {
-      innerHTML: "Gemini", // Or some icon
+      innerHTML: `${GEMINI_ICON}Geminiに聞く`, // Use icon and updated text
+    },
+    styles: {
+      backgroundColor: "#4285f4",
+      color: "white",
+      fontWeight: "bold",
+      borderRadius: "4px",
+      padding: "6px 12px",
+      marginInlineEnd: "5px",
+      border: "1px solid #1a73e8",
+      whiteSpace: "nowrap",
+      cursor: "pointer",
     },
     listeners: [
       {
@@ -41,6 +52,18 @@ export function buildReaderPopup(
           }
         },
       },
+      {
+        type: "mouseover",
+        listener: (e: MouseEvent) => {
+          (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#357ae8";
+        }
+      },
+      {
+        type: "mouseout",
+        listener: (e: MouseEvent) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#4285f4";
+        }
+      }
     ],
   });
 

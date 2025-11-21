@@ -99,11 +99,6 @@ export async function uploadFile(
       Zotero.logError(new Error(`Failed to read binary file with nsIFileInputStream: ${e.message || String(e)}`));
       throw e;
     }
-
-    if (binaryContent.length === 0) {
-      Zotero.logError(new Error("Read binary file content is empty."));
-      throw new Error("Read binary file content is empty.");
-    }
     
     // Log file content details before creating Blob
     Zotero.log(`[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`); 
@@ -111,17 +106,6 @@ export async function uploadFile(
     const pdfBlob = new Blob([binaryContent], { type: "application/pdf" });
     Zotero.log(`[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`); // Changed to Zotero.log
 
-    const response = await ai.files.upload({
-      file: pdfBlob,
-      config: {
-        mimeType: "application/pdf",
-        displayName: displayName,
-      },
-    });
-
-    Zotero.log(`Uploaded file: ${displayName}, URI: ${response.uri}`); // Changed to Zotero.log
-    return response;
-  } catch (error: any) {
     Zotero.logError(new Error(`Error uploading file ${displayName}: ${error.message || String(error)}`));
     throw error;
   } finally {
@@ -185,20 +169,16 @@ export async function sendMessageToGemini(
 
     const systemInstructionText = getPref("geminiSystemPrompt" as keyof _ZoteroTypes.Prefs["PluginPrefsMap"]) as string | undefined;
 
-    let conversationForApi: Content[] = fullConversation;
-    // Add system prompt priming turn only if history is empty and a system prompt is set
-    if (systemInstructionText && history.length === 0) {
-        conversationForApi = [
-            { role: "user", parts: [{ text: systemInstructionText }] },
-            { role: "model", parts: [{ text: "Understood." }] },
-            ...fullConversation
-        ];
+    const request: any = {
+        model: selectedModel,
+        contents: fullConversation,
+    };
+
+    if (systemInstructionText) {
+        request.systemInstruction = { parts: [{ text: systemInstructionText }] };
     }
 
-    const result: GenerateContentResponse = await ai.models.generateContent({
-        model: selectedModel,
-        contents: conversationForApi,
-    });
+    const result: GenerateContentResponse = await ai.models.generateContent(request);
     
     Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`); // Reverted to Zotero.log
 

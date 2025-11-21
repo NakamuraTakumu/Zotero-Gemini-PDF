@@ -200,6 +200,8 @@ export class ReaderItemPaneFactory {
           <html:div class="chat-model-selector-area">
               <html:label for="gemini-model-select">Select Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
+              <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
+              <html:input type="checkbox" id="use-google-search-checkbox" />
           </html:div>
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
@@ -252,7 +254,7 @@ export class ReaderItemPaneFactory {
 
         geminiModelSelect.innerHTML = ""; // Clear existing options
         availableModels.forEach(modelName => {
-          const option = doc.createElementNS("http://www.w3.org/1999/xhtml", "option");
+          const option = doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
           option.value = modelName;
           option.textContent = modelName;
           if (modelName === selectedModel) {
@@ -269,6 +271,18 @@ export class ReaderItemPaneFactory {
           const retrievedValue = getPref("geminiSelectedModel");
           Zotero.debug(`[Gemini PDF] UI: Immediately after setPref, getPref returns: ${retrievedValue}`);
         });
+
+        const useGoogleSearchCheckbox = body.querySelector("#use-google-search-checkbox") as HTMLInputElement;
+        if (useGoogleSearchCheckbox) {
+          const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
+          useGoogleSearchCheckbox.checked = useGoogleSearch;
+
+          useGoogleSearchCheckbox.addEventListener("change", (e) => {
+            const newValue = (e.target as HTMLInputElement).checked;
+            setPref("geminiUseGoogleSearch", newValue);
+            Zotero.debug(`[Gemini PDF] UI: Use Google Search changed to: ${newValue}`);
+          });
+        }
 
 
         let actualParentItem: Zotero.Item | null = (item.isAttachment() && item.parentID)
@@ -371,9 +385,8 @@ export class ReaderItemPaneFactory {
           doc.addEventListener("mouseup", stopDrag, false);
         });
 
-        const handleSendMessage = async () => {
-          const messageText = chatInput.value;
-          if (messageText.trim() === "" || !actualParentItem || !currentConversation) {
+        const processAndSendMessage = async (textForHistory: string, textForApi: string) => {
+          if (!actualParentItem || !currentConversation) {
             return;
           }
 
@@ -382,11 +395,12 @@ export class ReaderItemPaneFactory {
 
           const userMessageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
           userMessageDiv.className = "message user-message";
-          userMessageDiv.innerHTML = renderMarkdown(messageText);
+          userMessageDiv.innerHTML = renderMarkdown(textForHistory);
           chatMessages.appendChild(userMessageDiv);
           chatMessages.scrollTop = chatMessages.scrollHeight;
-          chatInput.value = "";
-          // adjustTextareaHeight();
+          if (textForApi === textForHistory) { // Clear input only for direct messages
+            chatInput.value = "";
+          }
 
           try {
             currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
@@ -407,7 +421,7 @@ export class ReaderItemPaneFactory {
             sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
             timestamp: new Date().toISOString(),
             role: "user",
-            parts: [{ text: messageText }],
+            parts: [{ text: textForHistory }],
           };
           currentConversation.history.push(userMessage);
           await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
@@ -424,7 +438,7 @@ export class ReaderItemPaneFactory {
             
             historyForApi.pop(); 
 
-            const userParts: Part[] = [{ text: messageText }];
+            const userParts: Part[] = [{ text: textForApi }];
             for (const file of currentConversation.metadata.files) {
               userParts.unshift({
                 fileData: {
@@ -434,7 +448,8 @@ export class ReaderItemPaneFactory {
               });
             }
 
-            const botResponseText = await sendMessageToGemini(historyForApi, userParts);
+            const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
+            const botResponseText = await sendMessageToGemini(historyForApi, userParts, useGoogleSearch);
 
             updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
 
@@ -459,92 +474,19 @@ export class ReaderItemPaneFactory {
           }
         };
 
+        const handleSendMessage = async () => {
+          const messageText = chatInput.value;
+          if (messageText.trim() === "") {
+            return;
+          }
+          await processAndSendMessage(messageText, messageText);
+        };
+
         const handleActionFromSelection = async (fullPrompt: string, summaryText: string) => {
-          if (!actualParentItem || !currentConversation) {
+          if (summaryText.trim() === "") {
             return;
           }
-
-          chatInput.disabled = true;
-          sendButton.disabled = true;
-
-          // Add summary to UI
-          const userMessageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
-          userMessageDiv.className = "message user-message";
-          userMessageDiv.innerHTML = renderMarkdown(summaryText);
-          chatMessages.appendChild(userMessageDiv);
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-
-          try {
-            currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
-              actualParentItem,
-              currentConversation,
-              { addBotMessage, updateBotMessage }
-            );
-            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-          } catch (syncError: any) {
-            Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
-            addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            return;
-          }
-
-          // Add summary to history
-          const userMessage: ConversationHistoryItem = {
-            sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
-            timestamp: new Date().toISOString(),
-            role: "user",
-            parts: [{ text: summaryText }],
-          };
-          currentConversation.history.push(userMessage);
-          await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-
-          const botMessageDiv = addBotMessage("Typing...", "bot-message");
-
-          try {
-            // Note: We send the full history (which includes the summary) to the API
-            // and then append the fullPrompt for this turn's query.
-            const historyForApi: Content[] = currentConversation.history.map(
-              (msg) => ({
-                role: msg.role,
-                parts: msg.parts,
-              })
-            );
-            historyForApi.pop(); // Remove the summary message we just added
-
-            const userParts: Part[] = [{ text: fullPrompt }]; // Use the full prompt for the API
-            for (const file of currentConversation.metadata.files) {
-              userParts.unshift({
-                fileData: {
-                  mimeType: "application/pdf",
-                  fileUri: file.geminiFileUri,
-                },
-              });
-            }
-
-            const botResponseText = await sendMessageToGemini(historyForApi, userParts);
-
-            updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
-
-            const selectedModelName = getPref("geminiSelectedModel") as string;
-            const botMessage: ConversationHistoryItem = {
-              sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
-              timestamp: new Date().toISOString(),
-              role: "model",
-              model: selectedModelName,
-              parts: [{ text: botResponseText || "" }],
-            };
-            currentConversation.history.push(botMessage);
-            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-
-          } catch (error: any) {
-            const errorMessage = error.message || String(error);
-            updateBotMessage(botMessageDiv, `Error: ${errorMessage}`);
-          } finally {
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            chatInput.focus();
-          }
+          await processAndSendMessage(summaryText, fullPrompt);
         };
 
         addon.data.handleActionFromSelection = handleActionFromSelection;

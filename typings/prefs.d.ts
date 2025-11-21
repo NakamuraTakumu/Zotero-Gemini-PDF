@@ -13,6 +13,7 @@ declare namespace _ZoteroTypes {
       "promptForSelection": string;
       "geminiModelList": string;
       "geminiSelectedModel": string;
+      "geminiUseGoogleSearch": boolean;
     };
   }
 }
