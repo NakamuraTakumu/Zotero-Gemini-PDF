@@ -16,6 +16,10 @@
                 <html:textarea id="__addonRef__-gemini-system-prompt" preference="__prefsPrefix__.geminiSystemPrompt" flex="1" rows="5"/>
             </hbox>
             <hbox align="center">
+                <label control="__addonRef__-prompt-for-selection" data-l10n-id="gemini-pdf-prompt-for-selection-label">Prompt for Selection:</label>
+                <html:textarea id="__addonRef__-prompt-for-selection" preference="__prefsPrefix__.promptForSelection" flex="1" rows="3"/>
+            </hbox>
+            <hbox align="center">
                 <label control="__addonRef__-gemini-chat-history-limit" data-l10n-id="gemini-pdf-context-window-size-label">Chat History Limit (messages):</label>
                 <html:input type="number" id="__addonRef__-gemini-chat-history-limit" preference="__prefsPrefix__.contextWindowSize" flex="1" min="0" value="20"/>
             </hbox>

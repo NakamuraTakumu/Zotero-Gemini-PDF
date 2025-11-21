@@ -26,8 +26,9 @@ declare class Addon {
         };
         dialog?: DialogHelper;
         lastSelectedText?: string;
-        chatPane?: HTMLDivElement;
-    };
+          chatPane?: HTMLDivElement;
+          handleActionFromSelection?: (fullPrompt: string, summaryText: string) => Promise<void>;
+        };
     hooks: typeof hooks;
     api: object;
     constructor();

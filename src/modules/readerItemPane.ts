@@ -420,6 +420,95 @@ export class ReaderItemPaneFactory {
           }
         };
 
+        const handleActionFromSelection = async (fullPrompt: string, summaryText: string) => {
+          if (!actualParentItem || !currentConversation) {
+            return;
+          }
+
+          chatInput.disabled = true;
+          sendButton.disabled = true;
+
+          // Add summary to UI
+          const userMessageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+          userMessageDiv.className = "message user-message";
+          userMessageDiv.innerHTML = renderMarkdown(summaryText);
+          chatMessages.appendChild(userMessageDiv);
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+
+          try {
+            currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
+              actualParentItem,
+              currentConversation,
+              { addBotMessage, updateBotMessage }
+            );
+            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
+          } catch (syncError: any) {
+            Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
+            addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
+            chatInput.disabled = false;
+            sendButton.disabled = false;
+            return;
+          }
+
+          // Add summary to history
+          const userMessage: ConversationHistoryItem = {
+            sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
+            timestamp: new Date().toISOString(),
+            role: "user",
+            parts: [{ text: summaryText }],
+          };
+          currentConversation.history.push(userMessage);
+          await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
+
+          const botMessageDiv = addBotMessage("Typing...", "bot-message");
+
+          try {
+            // Note: We send the full history (which includes the summary) to the API
+            // and then append the fullPrompt for this turn's query.
+            const historyForApi: Content[] = currentConversation.history.map(
+              (msg) => ({
+                role: msg.role,
+                parts: msg.parts,
+              })
+            );
+            historyForApi.pop(); // Remove the summary message we just added
+
+            const userParts: Part[] = [{ text: fullPrompt }]; // Use the full prompt for the API
+            for (const file of currentConversation.metadata.files) {
+              userParts.unshift({
+                fileData: {
+                  mimeType: "application/pdf",
+                  fileUri: file.geminiFileUri,
+                },
+              });
+            }
+
+            const botResponseText = await sendMessageToGemini(historyForApi, userParts);
+
+            updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
+
+            const botMessage: ConversationHistoryItem = {
+              sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
+              timestamp: new Date().toISOString(),
+              role: "model",
+              model: "gemini-2.5-flash",
+              parts: [{ text: botResponseText || "" }],
+            };
+            currentConversation.history.push(botMessage);
+            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
+
+          } catch (error: any) {
+            const errorMessage = error.message || String(error);
+            updateBotMessage(botMessageDiv, `Error: ${errorMessage}`);
+          } finally {
+            chatInput.disabled = false;
+            sendButton.disabled = false;
+            chatInput.focus();
+          }
+        };
+
+        addon.data.handleActionFromSelection = handleActionFromSelection;
+
         sendButton.addEventListener("click", handleSendMessage);
         chatInput.addEventListener("keydown", (event: KeyboardEvent) => {
           if (event.key === "Enter" && !event.shiftKey) {

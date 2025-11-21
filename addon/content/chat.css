@@ -56,6 +56,18 @@
   flex-shrink: 0;
   margin: 5px 0;
 }
+*|button.gemini-selection-button {
+  background-color: #4285f4; /* Google Blue */
+  color: white;
+  font-weight: bold;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-inline-end: 5px; /* Give it some space */
+  border: none; /* Remove default button border */
+}
+*|button.gemini-selection-button:hover {
+  background-color: #357ae8; /* Slightly darker blue on hover */
+}
 *|div.chat-input-area {
   display: flex;
   border-top: 1px solid var(--chat-border-color);

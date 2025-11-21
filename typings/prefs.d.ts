@@ -10,6 +10,7 @@ declare namespace _ZoteroTypes {
       "geminiApiKey": string;
       "geminiSystemPrompt": string;
       "contextWindowSize": number;
+      "promptForSelection": string;
     };
   }
 }

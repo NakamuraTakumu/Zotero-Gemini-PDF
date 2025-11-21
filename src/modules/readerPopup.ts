@@ -1,5 +1,7 @@
 // gemini-pdf/src/modules/readerPopup.ts
 import { createZToolkit } from "../utils/ztoolkit";
+import { getPref } from "../utils/prefs";
+import { config } from "../../package.json";
 
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
@@ -10,7 +12,7 @@ export function buildReaderPopup(
   const button = ztoolkit.UI.createElement(doc, "button", {
     namespace: "html",
     id: "gemini-pdf-popup-button",
-    classList: ["toolbar-button"],
+    classList: ["toolbar-button", "gemini-selection-button"],
     properties: {
       innerHTML: "Gemini", // Or some icon
     },
@@ -19,21 +21,23 @@ export function buildReaderPopup(
         type: "click",
         listener: (e: Event) => {
           e.stopPropagation();
-          const chatPane = addon.data.chatPane;
-          if (chatPane) {
-            const chatInput = chatPane.querySelector(
-              "#chat-input",
-            ) as HTMLTextAreaElement;
-            if (chatInput) {
-              chatInput.value = addon.data.lastSelectedText || "";
-              chatInput.focus();
-            } else {
-              Zotero.debug(
-                "Gemini PDF: Could not find #chat-input in the stored chat pane.",
-              );
-            }
+
+          const selectedText = addon.data.lastSelectedText || "";
+          if (!selectedText) {
+            Zotero.debug(`[${config.addonName}] No selected text found.`);
+            return;
+          }
+
+          const promptTemplate = getPref("promptForSelection") || "";
+          const fullPrompt = promptTemplate.replace("{selectedText}", selectedText);
+          const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"*`;
+
+          if (addon.data.handleActionFromSelection) {
+            addon.data.handleActionFromSelection(fullPrompt, summaryText);
           } else {
-            Zotero.debug("Gemini PDF: Could not find the stored chat pane.");
+            Zotero.debug(
+              `[${config.addonName}] handleActionFromSelection function not found.`,
+            );
           }
         },
       },
