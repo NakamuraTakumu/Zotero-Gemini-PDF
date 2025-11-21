@@ -301,8 +301,36 @@ export class ReaderItemPaneFactory {
           }
         }
 
-        // Resizing logic (omitted for brevity, no changes)
-        // ...
+        // Resizing logic
+        chatResizer.addEventListener("mousedown", (e: MouseEvent) => {
+          e.preventDefault();
+
+          const startY = e.clientY;
+          const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
+          const startHeight = chatMessages.clientHeight;
+          const chatContainer = body.querySelector(".chat-container") as HTMLDivElement;
+          const chatInputArea = body.querySelector(".chat-input-area") as HTMLDivElement;
+
+          const doDrag = (e: MouseEvent) => {
+            const newHeight = startHeight + (e.clientY - startY);
+            const minHeight = 50; // Minimum height for the chat messages
+            const maxHeight = chatContainer.clientHeight - chatInputArea.clientHeight - chatResizer.clientHeight - 30; // 30px for margins/padding
+
+            if (newHeight > minHeight && newHeight < maxHeight) {
+              chatMessages.style.height = `${newHeight}px`;
+              // The `max-height` style from CSS can interfere, so we override it.
+              chatMessages.style.maxHeight = 'none'; 
+            }
+          };
+
+          const stopDrag = () => {
+            doc.removeEventListener("mousemove", doDrag, false);
+            doc.removeEventListener("mouseup", stopDrag, false);
+          };
+
+          doc.addEventListener("mousemove", doDrag, false);
+          doc.addEventListener("mouseup", stopDrag, false);
+        });
 
         const handleSendMessage = async () => {
           const messageText = chatInput.value;
