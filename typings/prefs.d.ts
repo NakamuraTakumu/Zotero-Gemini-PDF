@@ -11,6 +11,8 @@ declare namespace _ZoteroTypes {
       "geminiSystemPrompt": string;
       "contextWindowSize": number;
       "promptForSelection": string;
+      "geminiModelList": string;
+      "geminiSelectedModel": string;
     };
   }
 }

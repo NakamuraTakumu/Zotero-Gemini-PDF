@@ -168,6 +168,8 @@ export async function sendMessageToGemini(
   history: Content[],
   userParts: Part[],
 ): Promise<string | null> {
+  const selectedModel = getPref("geminiSelectedModel") as string;
+  Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
   if (!ai) {
     initGeminiModel();
     if (!ai) {
@@ -194,7 +196,7 @@ export async function sendMessageToGemini(
     }
 
     const result: GenerateContentResponse = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: selectedModel,
         contents: conversationForApi,
     });
     

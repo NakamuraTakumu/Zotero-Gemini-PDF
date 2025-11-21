@@ -20,6 +20,10 @@
                 <html:textarea id="__addonRef__-prompt-for-selection" preference="__prefsPrefix__.promptForSelection" flex="1" rows="3"/>
             </hbox>
             <hbox align="center">
+                <label control="__addonRef__-gemini-model-list" data-l10n-id="gemini-pdf-model-list-label">Available Models (comma-separated):</label>
+                <html:textarea id="__addonRef__-gemini-model-list" preference="__prefsPrefix__.geminiModelList" flex="1" rows="2"/>
+            </hbox>
+            <hbox align="center">
                 <label control="__addonRef__-gemini-chat-history-limit" data-l10n-id="gemini-pdf-context-window-size-label">Chat History Limit (messages):</label>
                 <html:input type="number" id="__addonRef__-gemini-chat-history-limit" preference="__prefsPrefix__.contextWindowSize" flex="1" min="0" value="20"/>
             </hbox>

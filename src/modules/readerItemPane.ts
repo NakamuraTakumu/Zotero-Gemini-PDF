@@ -8,7 +8,7 @@ import {
 import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
 import markdownItKatex from "markdown-it-katex";
-import { getPref } from "../utils/prefs";
+import { getPref, setPref } from "../utils/prefs";
 import {
   Conversation,
   ConversationFile,
@@ -197,6 +197,10 @@ export class ReaderItemPaneFactory {
       bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
           <html:div class="chat-messages" id="chat-messages"></html:div>
           <html:div class="chat-resizer" id="chat-resizer"></html:div>
+          <html:div class="chat-model-selector-area">
+              <html:label for="gemini-model-select">Select Model:</html:label>
+              <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
+          </html:div>
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
               <html:button id="send-button" class="send-button">Send</html:button>
@@ -238,6 +242,35 @@ export class ReaderItemPaneFactory {
 
         if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer) return;
 
+        const geminiModelSelect = body.querySelector("#gemini-model-select") as HTMLSelectElement;
+        if (!geminiModelSelect) return;
+
+        // Populate model selector
+        const availableModelsString = getPref("geminiModelList") || "";
+        const availableModels = availableModelsString.split(',').map(m => m.trim()).filter(m => m.length > 0);
+        const selectedModel = getPref("geminiSelectedModel") || "";
+
+        geminiModelSelect.innerHTML = ""; // Clear existing options
+        availableModels.forEach(modelName => {
+          const option = doc.createElementNS("http://www.w3.org/1999/xhtml", "option");
+          option.value = modelName;
+          option.textContent = modelName;
+          if (modelName === selectedModel) {
+            option.selected = true;
+          }
+          geminiModelSelect.appendChild(option);
+        });
+
+        // Add listener to save selected model
+        geminiModelSelect.addEventListener("change", (e) => {
+          const newValue = (e.target as HTMLSelectElement).value;
+          Zotero.debug(`[Gemini PDF] UI: Model selection changed to: ${newValue}`);
+          setPref("geminiSelectedModel", newValue);
+          const retrievedValue = getPref("geminiSelectedModel");
+          Zotero.debug(`[Gemini PDF] UI: Immediately after setPref, getPref returns: ${retrievedValue}`);
+        });
+
+
         let actualParentItem: Zotero.Item | null = (item.isAttachment() && item.parentID)
           ? await Zotero.Items.getAsync(item.parentID)
           : item;
@@ -270,7 +303,12 @@ export class ReaderItemPaneFactory {
               if (conversationFilePath) {
                 const content = await Zotero.File.getContentsAsync(conversationFilePath);
                 if (typeof content === "string" && content.trim() !== "") {
-                  currentConversation = JSON.parse(content) as Conversation;
+                  try {
+                    currentConversation = JSON.parse(content) as Conversation;
+                  } catch (e: any) {
+                    Zotero.logError(new Error(`Failed to parse conversation JSON: ${e.message || String(e)}`));
+                    currentConversation = null; // Treat as no conversation
+                  }
                 }
               }
             }
@@ -400,11 +438,12 @@ export class ReaderItemPaneFactory {
 
             updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
 
+            const selectedModelName = getPref("geminiSelectedModel") as string;
             const botMessage: ConversationHistoryItem = {
               sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
               timestamp: new Date().toISOString(),
               role: "model",
-              model: "gemini-2.5-flash",
+              model: selectedModelName,
               parts: [{ text: botResponseText || "" }],
             };
             currentConversation.history.push(botMessage);
@@ -487,11 +526,12 @@ export class ReaderItemPaneFactory {
 
             updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
 
+            const selectedModelName = getPref("geminiSelectedModel") as string;
             const botMessage: ConversationHistoryItem = {
               sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
               timestamp: new Date().toISOString(),
               role: "model",
-              model: "gemini-2.5-flash",
+              model: selectedModelName,
               parts: [{ text: botResponseText || "" }],
             };
             currentConversation.history.push(botMessage);

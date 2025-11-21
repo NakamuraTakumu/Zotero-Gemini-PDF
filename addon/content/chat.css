@@ -68,6 +68,20 @@
 *|button.gemini-selection-button:hover {
   background-color: #357ae8; /* Slightly darker blue on hover */
 }
+*|div.chat-model-selector-area {
+  padding-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+*|select.gemini-model-select {
+  flex-grow: 1;
+  border: 1px solid var(--chat-input-border);
+  padding: 5px;
+  border-radius: 4px;
+  background-color: var(--chat-input-bg);
+  color: var(--chat-text-color);
+}
 *|div.chat-input-area {
   display: flex;
   border-top: 1px solid var(--chat-border-color);
