@@ -2,6 +2,7 @@ import { ReaderItemPaneFactory } from "./modules/readerItemPane";
 import { registerPrefsScripts } from "./modules/preferenceScript"; // Import the preference script
 import { initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
+import { buildReaderPopup } from "./modules/readerPopup";
 
 async function onStartup() {
   await Promise.all([
@@ -14,6 +15,16 @@ async function onStartup() {
 
   // Register the reader item pane section
   await ReaderItemPaneFactory.registerReaderItemPaneSection();
+
+  // Register our function to inject the button into the reader popup
+  Zotero.Reader.registerEventListener(
+    "renderTextSelectionPopup",
+    (event) => {
+      addon.data.lastSelectedText = event.params.annotation.text?.trim();
+      buildReaderPopup(event);
+    },
+    addon.data.config.addonID
+  );
 
   // Register the preference pane
   Zotero.PreferencePanes.register({

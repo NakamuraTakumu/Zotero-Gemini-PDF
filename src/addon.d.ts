@@ -25,6 +25,8 @@ declare class Addon {
             }>;
         };
         dialog?: DialogHelper;
+        lastSelectedText?: string;
+        chatPane?: HTMLDivElement;
     };
     hooks: typeof hooks;
     api: object;

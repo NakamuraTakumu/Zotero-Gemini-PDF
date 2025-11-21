@@ -1,9 +1,8 @@
 <?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
 <?xml-stylesheet href="chrome://zotero/skin/preferences.css" type="text/css"?>
 
-<prefpane id="my-plugin-prefpane"
-          label="My Plugin"
-          onpaneload="addon.hooks.onPrefsWindowLoad(window);">
+<vbox id="zotero-prefpane-__addonRef__"
+      onload="Zotero.__addonInstance__.hooks.onPrefsWindowLoad(window);">
     <script src="chrome://zotero/content/include.js"/>
     <vbox flex="1">
         <groupbox>
@@ -22,4 +21,4 @@
             </hbox>
         </groupbox>
     </vbox>
-</prefpane>
+</vbox>

@@ -207,6 +207,7 @@ export class ReaderItemPaneFactory {
         return true;
       },
       onRender: async ({ body, item }) => {
+        addon.data.chatPane = body; // Store a reference to the pane's body
         initGeminiModel(); // Initialize the client
 
         const doc = body.ownerDocument;
