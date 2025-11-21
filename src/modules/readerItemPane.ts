@@ -449,7 +449,12 @@ export class ReaderItemPaneFactory {
             }
 
             const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
-            const botResponseText = await sendMessageToGemini(historyForApi, userParts, useGoogleSearch);
+            const tools: any[] = [];
+            if (useGoogleSearch) {
+              tools.push({ url_context: {} });
+              tools.push({ googleSearch: {} });
+            }
+            const botResponseText = await sendMessageToGemini(historyForApi, userParts, tools);
 
             updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
 

@@ -1,9 +1,12 @@
 import {
-  GoogleGenAI,
+  GoogleGenAI, // Reverted from GoogleGenerativeAI
   Content,
   Part,
   File as GeminiFile,
   GenerateContentResponse,
+  FunctionDeclaration, // Added for tool definition
+  HarmCategory, // Added for safety settings
+  HarmBlockThreshold, // Added for safety settings
 } from "@google/genai";
 import { getPref } from "../utils/prefs";
 
@@ -25,7 +28,7 @@ export function initGeminiModel(apiKey?: string): void {
     return;
   }
 
-  ai = new GoogleGenAI({ apiKey: key });
+  ai = new GoogleGenAI({ apiKey: key }); // Reverted from GoogleGenerativeAI
   Zotero.log("GoogleGenAI client initialized.");
 }
 
@@ -104,9 +107,21 @@ export async function uploadFile(
     Zotero.log(`[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`); 
 
     const pdfBlob = new Blob([binaryContent], { type: "application/pdf" });
-    Zotero.log(`[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`); // Changed to Zotero.log
+    Zotero.log(`[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`);
 
-    Zotero.logError(new Error(`Error uploading file ${displayName}: ${error.message || String(error)}`));
+    // Call the actual upload API
+    const uploadedFile = await ai.files.upload({
+      file: pdfBlob,
+      config: {
+        mimeType: "application/pdf",
+        displayName: displayName,
+      },
+    });
+    Zotero.log(`[Gemini] File uploaded: ${uploadedFile.name}`);
+    return uploadedFile;
+
+  } catch (error: any) { // Catch block for the entire upload process
+    Zotero.logError(new Error(`Error during file upload process for ${displayName}: ${error.message || String(error)}`));
     throw error;
   } finally {
     try {
@@ -151,6 +166,7 @@ export async function getFileMetadata(
 export async function sendMessageToGemini(
   history: Content[],
   userParts: Part[],
+  tools?: any[], // Changed signature to accept tools
 ): Promise<string | null> {
   const selectedModel = getPref("geminiSelectedModel") as string;
   Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
@@ -172,6 +188,7 @@ export async function sendMessageToGemini(
     const request: any = {
         model: selectedModel,
         contents: fullConversation,
+        tools: tools, // Add this line for tools
     };
 
     if (systemInstructionText) {
@@ -180,7 +197,7 @@ export async function sendMessageToGemini(
 
     const result: GenerateContentResponse = await ai.models.generateContent(request);
     
-    Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`); // Reverted to Zotero.log
+    Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`);
 
     let responseText: string | null = null;
     if (result.candidates && result.candidates.length > 0) {
@@ -200,14 +217,14 @@ export async function sendMessageToGemini(
             errorReason = "The model returned an empty response or a response in an unexpected format.";
         }
 
-        Zotero.logError(new Error(`No text part found in Gemini response. ${errorReason}`)); // Reverted to Zotero.logError
+        Zotero.logError(new Error(`No text part found in Gemini response. ${errorReason}`));
         return `Error: Did not receive a valid response from Gemini. ${errorReason}`;
     }
-    Zotero.log(`[Gemini] Raw response from API: ${responseText}`); // Reverted to Zotero.log
+    Zotero.log(`[Gemini] Raw response from API: ${responseText}`);
     return responseText;
   } catch (error: any) {
     Zotero.logError(
-      new Error(`Error sending message to Gemini: ${error.message || String(error)}`), // Reverted to Zotero.logError
+      new Error(`Error sending message to Gemini: ${error.message || String(error)}`),
     );
     return `Error: Could not get response from Gemini. ${error.message || String(error)}`;
   }
