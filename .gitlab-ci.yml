@@ -1,0 +1,18 @@
+# .gitlab-ci.yml
+
+# Use the official Node.js 20 image.
+image: node:20
+
+stages:
+  - build
+
+build-plugin:
+  stage: build
+  script:
+    - echo "Installing dependencies..."
+    - npm ci
+    - echo "Building plugin..."
+    - npm run build
+  artifacts:
+    paths:
+      - build/

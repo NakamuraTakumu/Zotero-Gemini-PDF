@@ -21,6 +21,9 @@ class Addon {
       rows: Array<{ [dataKey: string]: string }>;
     };
     dialog?: DialogHelper;
+    lastSelectedText?: string;
+    chatPane?: HTMLDivElement;
+    handleActionFromSelection?: (fullPrompt: string, summaryText: string) => Promise<void>;
   };
   // Lifecycle hooks
   public hooks: typeof hooks;
