@@ -1,187 +1,17 @@
 import { getLocaleID } from "../utils/locale";
-import {
-  sendMessageToGemini,
-  initGeminiModel,
-  uploadFile,
-  getFileMetadata,
-} from "./geminiApi";
-import MarkdownIt from "markdown-it";
-import createDOMPurify from "dompurify";
-import markdownItKatex from "markdown-it-katex";
 import { getPref, setPref } from "../utils/prefs";
 import {
-  Conversation,
-  ConversationFile,
-  ConversationHistoryItem,
-} from "../types/chat";
-import { Content, Part } from "@google/genai";
-
+  PREF_MODEL_LIST,
+  PREF_SELECTED_MODEL,
+  PREF_USE_GOOGLE_SEARCH,
+} from "../utils/constants";
+import { Conversation } from "../types/chat";
+import { ConversationManager } from "./reader/conversation";
+import { ChatManager } from "./reader/chat";
+import { UIManager } from "./reader/ui";
 
 // chat用タブ
 export class ReaderItemPaneFactory {
-  static async getOrCreateConversationAttachment(
-    parentItem: Zotero.Item,
-  ): Promise<Zotero.Item> {
-    const CONVERSATION_TITLE = "Gemini Conversation";
-
-    const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments(),
-    );
-    for (const attachment of childAttachments) {
-      if (
-        (attachment.itemType as string) === "attachment" &&
-        attachment.getField("title") === CONVERSATION_TITLE &&
-        attachment.attachmentLinkMode ===
-          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      ) {
-        Zotero.debug("Found existing imported conversation attachment.");
-        return attachment;
-      }
-    }
-
-    Zotero.debug("Creating new Gemini Conversation attachment via import.");
-
-    const initialConversation: Conversation = {
-      metadata: {
-        version: "1.0",
-        zoteroParentItemKey: parentItem.key,
-        files: [],
-        lastUploadTimestamp: new Date().toISOString(),
-      },
-      history: [],
-    };
-    const conversationJsonString = JSON.stringify(initialConversation, null, 2);
-    const filename = "gemini_conversation.json";
-
-    // Use Zotero's own methods to construct the temporary file path
-    const tempDir = Zotero.getTempDirectory();
-    const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
-    tempDir.append(tempFileName);
-    const tempFilePath = tempDir.path;
-
-    try {
-      await Zotero.File.putContentsAsync(tempFilePath, conversationJsonString);
-      const tempFile = Zotero.File.pathToFile(tempFilePath);
-
-      const newAttachment = await Zotero.Attachments.importFromFile({
-        file: tempFile,
-        parentItemID: parentItem.id,
-        contentType: "application/json",
-        title: CONVERSATION_TITLE,
-      });
-
-      Zotero.debug(
-        `Successfully created new conversation attachment with key ${newAttachment.key}`,
-      );
-      return newAttachment;
-    } catch (e: any) {
-      Zotero.logError(new Error(`Error creating attachment from temp file: ${e.message || String(e)}`));
-      throw e;
-    } finally {
-      try {
-        const tempFile = Zotero.File.pathToFile(tempFilePath);
-        if (tempFile.exists()) {
-          tempFile.remove(false);
-          Zotero.debug(`Temporary file removed: ${tempFilePath}`);
-        }
-      } catch (cleanupError: any) {
-        Zotero.logError(
-          new Error(`Failed to clean up temporary file ${tempFilePath}: ${cleanupError.message || String(cleanupError)}`),
-        );
-      }
-    }
-  }
-
-  /**
-   * Synchronizes the PDF context with the Gemini File API.
-   */
-  static async synchronizePdfContext(
-    parentItem: Zotero.Item,
-    conversation: Conversation,
-    ui: { addBotMessage: (html: string, className?: string) => HTMLDivElement, updateBotMessage: (element: HTMLDivElement, html: string) => void }
-  ): Promise<Conversation> {
-    Zotero.debug("Starting PDF context synchronization...");
-    const statusMessageDiv = ui.addBotMessage("Syncing PDFs...", "sync-message");
-
-    const childAttachmentIds = parentItem.getAttachments(false);
-    const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
-    const pdfAttachments = childAttachments.filter(
-      (att) => (att.attachmentContentType === "application/pdf" || att.attachmentContentType === "application/x-pdf") && att.attachmentPath
-    );
-
-    let updated = false;
-
-    const syncPromises = pdfAttachments.map(async (pdf) => {
-      const pdfKey = pdf.key;
-      let fileInfo = conversation.metadata.files.find(
-        (f) => f.zoteroAttachmentKey === pdfKey,
-      );
-
-      let needsUpload = false;
-      if (fileInfo) {
-        Zotero.debug(`Checking status of existing file: ${fileInfo.geminiFileName}`);
-        const metadata = await getFileMetadata(fileInfo.geminiFileName);
-        if (!metadata) {
-          Zotero.debug(`File ${fileInfo.geminiFileName} is expired or missing. Re-uploading.`);
-          needsUpload = true;
-        } else {
-          Zotero.debug(`File ${fileInfo.geminiFileName} is still valid.`);
-        }
-      } else {
-        Zotero.debug(`No existing file record for PDF: ${pdf.getField('title')}. Uploading.`);
-        needsUpload = true;
-      }
-
-      if (needsUpload) {
-        const pdfPath = pdf.getFilePath();
-        const pdfTitle = pdf.getField("title") as string;
-        if (!pdfPath) {
-            Zotero.logError(new Error(`Could not get file path for PDF: ${pdfTitle}`));
-            return;
-        }
-        try {
-          ui.updateBotMessage(statusMessageDiv, `Uploading ${pdfTitle}...`);
-          const uploadResult = await uploadFile(pdfPath, pdfTitle);
-          
-          if (uploadResult && uploadResult.uri && uploadResult.name) {
-            updated = true;
-
-            const newFileInfo: ConversationFile = {
-              zoteroAttachmentKey: pdfKey,
-              geminiFileUri: uploadResult.uri,
-              geminiFileName: uploadResult.name,
-              fileName: pdfTitle,
-            };
-
-            conversation.metadata.files = conversation.metadata.files.filter(
-              (f) => f.zoteroAttachmentKey !== pdfKey,
-            );
-            conversation.metadata.files.push(newFileInfo);
-            Zotero.debug(`Successfully uploaded and recorded file: ${pdfTitle}`);
-          } else {
-            throw new Error("Upload result is invalid or missing URI/name.");
-          }
-
-        } catch (uploadError: any) {
-          Zotero.logError(new Error(`Failed to upload ${pdfTitle}: ${uploadError.message || String(uploadError)}`));
-          ui.updateBotMessage(statusMessageDiv, `Error uploading ${pdfTitle}.`);
-        }
-      }
-    });
-
-    await Promise.all(syncPromises);
-
-    if (updated) {
-      conversation.metadata.lastUploadTimestamp = new Date().toISOString();
-    }
-    
-    ui.updateBotMessage(statusMessageDiv, "PDF sync complete.");
-    setTimeout(() => statusMessageDiv.remove(), 2000);
-
-    Zotero.debug("PDF context synchronization finished.");
-    return conversation;
-  }
-
   static async registerReaderItemPaneSection() {
     Zotero.ItemPaneManager.registerSection({
       paneID: "reader-item-info",
@@ -214,28 +44,13 @@ export class ReaderItemPaneFactory {
       },
       onRender: async ({ body, item }) => {
         addon.data.chatPane = body; // Store a reference to the pane's body
-        initGeminiModel(); // Initialize the client
 
         const doc = body.ownerDocument;
         if (!doc) return;
         const window = doc.defaultView as any;
         if (!window) return;
 
-        const DOMPurify = createDOMPurify(window);
-        const md = new MarkdownIt({ xhtmlOut: true }).use(markdownItKatex, {
-          throwOnError: false,
-          errorColor: "#cc0000",
-          output: "mathml",
-          strict: false,
-        });
-
-        function renderMarkdown(text: string): string {
-          const sanitizedText = DOMPurify.sanitize(text, {
-            ADD_TAGS: ["math", "mi", "mo", "mn", "mtext", "mrow", "mfrac", "msup", "msub", "msubsup", "mover", "munder", "munderover", "msqrt", "mroot", "mfenced", "menclose", "mstyle", "mphantom", "mglyph", "mlabeledtr", "mtable", "mtr", "mtd", "maligngroup", "malignmark", "msgroup", "msrow", "mscol", "msline", "semantics", "annotation", "annotation-xml", "span", "svg", "path", "g", "rect", "use"],
-            ADD_ATTR: ["xmlns", "encoding", "class", "aria-hidden", "width", "height", "viewBox", "x", "y", "transform", "fill", "stroke", "stroke-width", "d", "style"]
-          });
-          return md.render(sanitizedText);
-        }
+        const chatManager = new ChatManager(window);
 
         const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
         const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
@@ -243,6 +58,10 @@ export class ReaderItemPaneFactory {
         const chatResizer = body.querySelector("#chat-resizer") as HTMLDivElement;
 
         if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer) return;
+        
+        const uiManager = new UIManager(doc, chatMessages);
+        uiManager.initModelSelector();
+        uiManager.initGoogleSearchCheckbox();
 
         // Handle clicks on external links
         chatMessages.addEventListener("click", (e: Event) => {
@@ -261,107 +80,22 @@ export class ReaderItemPaneFactory {
           }
         });
 
-        const geminiModelSelect = body.querySelector("#gemini-model-select") as HTMLSelectElement;
-        if (!geminiModelSelect) return;
-
-        // Populate model selector
-        const availableModelsString = getPref("geminiModelList") || "";
-        const availableModels = availableModelsString.split(',').map(m => m.trim()).filter(m => m.length > 0);
-        const selectedModel = getPref("geminiSelectedModel") || "";
-
-        geminiModelSelect.innerHTML = ""; // Clear existing options
-        availableModels.forEach(modelName => {
-          const option = doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
-          option.value = modelName;
-          option.textContent = modelName;
-          if (modelName === selectedModel) {
-            option.selected = true;
-          }
-          geminiModelSelect.appendChild(option);
-        });
-
-        // Add listener to save selected model
-        geminiModelSelect.addEventListener("change", (e) => {
-          const newValue = (e.target as HTMLSelectElement).value;
-          Zotero.debug(`[Gemini PDF] UI: Model selection changed to: ${newValue}`);
-          setPref("geminiSelectedModel", newValue);
-          const retrievedValue = getPref("geminiSelectedModel");
-          Zotero.debug(`[Gemini PDF] UI: Immediately after setPref, getPref returns: ${retrievedValue}`);
-        });
-
-        const useGoogleSearchCheckbox = body.querySelector("#use-google-search-checkbox") as HTMLInputElement;
-        if (useGoogleSearchCheckbox) {
-          const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
-          useGoogleSearchCheckbox.checked = useGoogleSearch;
-
-          useGoogleSearchCheckbox.addEventListener("change", (e) => {
-            const newValue = (e.target as HTMLInputElement).checked;
-            setPref("geminiUseGoogleSearch", newValue);
-            Zotero.debug(`[Gemini PDF] UI: Use Google Search changed to: ${newValue}`);
-          });
-        }
-
-
         let actualParentItem: Zotero.Item | null = (item.isAttachment() && item.parentID)
           ? await Zotero.Items.getAsync(item.parentID)
           : item;
 
         let currentConversation: Conversation | null = null;
 
-        const addBotMessage = (html: string, className: string = 'bot-message'): HTMLDivElement => {
-            const div = doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
-            div.className = `message ${className}`;
-            div.innerHTML = html;
-            chatMessages.appendChild(div);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            return div;
-        };
-
-        const updateBotMessage = (element: HTMLDivElement, html: string) => {
-            element.innerHTML = html;
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        };
 
         if (actualParentItem) {
           try {
-            const childAttachments = await Zotero.Items.get(actualParentItem.getAttachments());
-            const existingAttachment = childAttachments.find(
-              (att) => att.isAttachment() && att.getField("title") === "Gemini Conversation"
-            );
-
-            if (existingAttachment) {
-              const conversationFilePath = existingAttachment.getFilePath();
-              if (conversationFilePath) {
-                const content = await Zotero.File.getContentsAsync(conversationFilePath);
-                if (typeof content === "string" && content.trim() !== "") {
-                  try {
-                    currentConversation = JSON.parse(content) as Conversation;
-                  } catch (e: any) {
-                    Zotero.logError(new Error(`Failed to parse conversation JSON: ${e.message || String(e)}`));
-                    currentConversation = null; // Treat as no conversation
-                  }
-                }
-              }
-            }
-            
-            if (!currentConversation) {
-              currentConversation = {
-                metadata: {
-                  version: "1.0",
-                  zoteroParentItemKey: actualParentItem.key,
-                  files: [],
-                  lastUploadTimestamp: new Date().toISOString(),
-                },
-                history: [],
-              };
-            }
-
+            currentConversation = await ConversationManager.loadConversation(actualParentItem);
             chatMessages.innerHTML = "";
             for (const message of currentConversation.history) {
               const messageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
               messageDiv.className = `message ${message.role}-message`;
 
-              let messageHtml = renderMarkdown(message.parts[0].text);
+              let messageHtml = chatManager.renderMarkdown(message.parts[0].text);
 
               if (message.role === 'model' && message.groundingMetadata) {
                 let sources = '';
@@ -390,7 +124,7 @@ export class ReaderItemPaneFactory {
 
           } catch (e: any) {
             Zotero.logError(new Error(`Error loading conversation: ${e.message || String(e)}`));
-            addBotMessage(`Error loading conversation: ${e.message || String(e)}`, 'error-message');
+            uiManager.addBotMessage(`Error loading conversation: ${e.message || String(e)}`, 'error-message');
           }
         }
 
@@ -425,136 +159,35 @@ export class ReaderItemPaneFactory {
           doc.addEventListener("mouseup", stopDrag, false);
         });
 
-        const processAndSendMessage = async (textForHistory: string, textForApi: string) => {
-          if (!actualParentItem || !currentConversation) {
-            return;
-          }
-
-          chatInput.disabled = true;
-          sendButton.disabled = true;
-
-          const userMessageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
-          userMessageDiv.className = "message user-message";
-          userMessageDiv.innerHTML = renderMarkdown(textForHistory);
-          chatMessages.appendChild(userMessageDiv);
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-          if (textForApi === textForHistory) { // Clear input only for direct messages
-            chatInput.value = "";
-          }
-
-          try {
-            currentConversation = await ReaderItemPaneFactory.synchronizePdfContext(
-              actualParentItem,
-              currentConversation,
-              { addBotMessage, updateBotMessage }
-            );
-            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-          } catch (syncError: any) {
-            Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
-            addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            return;
-          }
-
-          const userMessage: ConversationHistoryItem = {
-            sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
-            timestamp: new Date().toISOString(),
-            role: "user",
-            parts: [{ text: textForHistory }],
-          };
-          currentConversation.history.push(userMessage);
-          await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-
-          const botMessageDiv = addBotMessage("Typing...", "bot-message");
-
-          try {
-            const historyForApi: Content[] = currentConversation.history.map(
-              (msg) => ({
-                role: msg.role,
-                parts: msg.parts,
-              })
-            );
-            
-            historyForApi.pop(); 
-
-            const userParts: Part[] = [{ text: textForApi }];
-            for (const file of currentConversation.metadata.files) {
-              userParts.unshift({
-                fileData: {
-                  mimeType: "application/pdf",
-                  fileUri: file.geminiFileUri,
-                },
-              });
-            }
-
-            const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
-            let tools: any[] | undefined = undefined;
-            if (useGoogleSearch) {
-              tools = [
-                { googleSearch: {} },
-                { urlContext: {} }
-              ];
-            }
-                                    const { responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(historyForApi, userParts, tools);
-                        
-                                    let messageHtml = renderMarkdown(botResponseText || "No response.");
-                        
-                                    if (groundingMetadata) {
-                                      let sources = '';
-                                      if (groundingMetadata.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
-                                        sources = groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
-                                          if (chunk.web) {
-                                            return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
-                                          }
-                                          return null;
-                                        }).filter(Boolean).join('');
-                                      } else if (groundingMetadata.retrievedReferences && groundingMetadata.retrievedReferences.length > 0) {
-                                        sources = groundingMetadata.retrievedReferences.map((ref: any, index: number) =>
-                                          `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
-                                        ).join('');
-                                      }
-
-                                      if (sources) {
-                                        messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
-                                      }
-                                    }            updateBotMessage(botMessageDiv, messageHtml);
-
-            const selectedModelName = getPref("geminiSelectedModel") as string;
-            const botMessage: ConversationHistoryItem = {
-              sequence: (currentConversation.history.at(-1)?.sequence ?? -1) + 1,
-              timestamp: new Date().toISOString(),
-              role: "model",
-              model: selectedModelName,
-              parts: [{ text: botResponseText || "" }],
-              groundingMetadata: groundingMetadata,
-            };
-            currentConversation.history.push(botMessage);
-            await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
-
-          } catch (error: any) {
-            const errorMessage = error.message || String(error);
-            updateBotMessage(botMessageDiv, `Error: ${errorMessage}`);
-          } finally {
-            chatInput.disabled = false;
-            sendButton.disabled = false;
-            chatInput.focus();
-          }
-        };
-
         const handleSendMessage = async () => {
           const messageText = chatInput.value;
           if (messageText.trim() === "") {
             return;
           }
-          await processAndSendMessage(messageText, messageText);
+          if (actualParentItem && currentConversation) {
+            await chatManager.processAndSendMessage(
+              messageText,
+              messageText,
+              actualParentItem,
+              currentConversation,
+              { addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages }
+            );
+          }
         };
 
         const handleActionFromSelection = async (fullPrompt: string, summaryText: string) => {
           if (summaryText.trim() === "") {
             return;
           }
-          await processAndSendMessage(summaryText, fullPrompt);
+          if (actualParentItem && currentConversation) {
+            await chatManager.processAndSendMessage(
+              summaryText,
+              fullPrompt,
+              actualParentItem,
+              currentConversation,
+              { addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages }
+            );
+          }
         };
 
         addon.data.handleActionFromSelection = handleActionFromSelection;
@@ -589,30 +222,5 @@ export class ReaderItemPaneFactory {
       },
     });
     doc.documentElement?.appendChild(katexStyles);
-  }
-
-  static async saveConversation(
-    actualParentItem: Zotero.Item,
-    conversation: Conversation,
-  ) {
-    if (!actualParentItem) {
-      Zotero.debug("Could not determine actualParentItem for conversation.");
-      return;
-    }
-
-    const conversationAttachment =
-      await ReaderItemPaneFactory.getOrCreateConversationAttachment(
-        actualParentItem,
-      );
-    const conversationFilePath = conversationAttachment.getFilePath();
-
-    if (conversationFilePath) {
-      const newContent = JSON.stringify(conversation, null, 2);
-      try {
-        await Zotero.File.putContentsAsync(conversationFilePath, newContent);
-      } catch (e: any) {
-        Zotero.debug(`Error writing to conversation file: ${e.message || String(e)}`);
-      }
-    }
   }
 }

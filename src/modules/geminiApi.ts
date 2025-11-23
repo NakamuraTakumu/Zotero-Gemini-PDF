@@ -1,40 +1,37 @@
 import {
-  GoogleGenAI, // Reverted from GoogleGenerativeAI
+  GoogleGenAI,
   Content,
   Part,
   File as GeminiFile,
   GenerateContentResponse,
-  FunctionDeclaration, // Added for tool definition
-  HarmCategory, // Added for safety settings
-  HarmBlockThreshold, // Added for safety settings
 } from "@google/genai";
 import { getPref } from "../utils/prefs";
+import { PREF_API_KEY, PREF_SELECTED_MODEL, PREF_SYSTEM_PROMPT } from "../utils/constants";
 
 let ai: GoogleGenAI | null = null;
 
-export function initGeminiModel(apiKey?: string): void {
-  const key =
-    apiKey ||
-    (getPref(
-      "geminiApiKey" as keyof _ZoteroTypes.Prefs["PluginPrefsMap"],
-    ) as string);
-  if (typeof key !== "string" || !key) {
+function getGeminiClient(): GoogleGenAI | null {
+  if (ai) {
+    return ai;
+  }
+  const apiKey = getPref(PREF_API_KEY) as string;
+  if (typeof apiKey !== "string" || !apiKey) {
     Zotero.logError(
       new Error(
-        "Gemini API Key is not a valid string or is not set. Cannot initialize Gemini model.",
+        "Gemini API Key is not a valid string or is not set. Cannot initialize Gemini model."
       ),
     );
-    ai = null;
-    return;
+    return null;
   }
-
-  ai = new GoogleGenAI({ apiKey: key }); // Reverted from GoogleGenerativeAI
+  ai = new GoogleGenAI({ apiKey });
   Zotero.log("GoogleGenAI client initialized.");
+  return ai;
 }
 
-/**
- * Uploads a file to the Gemini API using a temporary file path.
- */
+export function initGeminiModel(): void {
+  getGeminiClient();
+}
+
 /**
  * Uploads a file to the Gemini API using a temporary file path.
  */
@@ -42,11 +39,9 @@ export async function uploadFile(
   filePath: string,
   displayName: string,
 ): Promise<GeminiFile> {
-  if (!ai) {
-    initGeminiModel();
-    if (!ai) {
-      throw new Error("Gemini API not initialized.");
-    }
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error("Gemini API not initialized.");
   }
 
   const tempFileName = `${Zotero.Utilities.randomString()}-${displayName}.pdf`; // Added .pdf extension
@@ -55,29 +50,25 @@ export async function uploadFile(
   const tempFilePath = tempDir.path;
 
   try {
-    Zotero.log(`[Gemini] Starting upload for: ${displayName} from path: ${filePath}`); // Changed to Zotero.log
+    Zotero.log(`[Gemini] Starting upload for: ${displayName} from path: ${filePath}`);
     const zoteroFile = Zotero.File.pathToFile(filePath);
     await zoteroFile.copyTo(Zotero.getTempDirectory(), tempFileName);
-    Zotero.log(`[Gemini] Copied file to temporary path: ${tempFilePath}`); // Changed to Zotero.log
+    Zotero.log(`[Gemini] Copied file to temporary path: ${tempFilePath}`);
 
-    // Use a different variable name for the temporary nsIFile object to avoid redeclaration
-    const tempNsIFile = Zotero.File.pathToFile(tempFilePath); 
+    const tempNsIFile = Zotero.File.pathToFile(tempFilePath);
     if (!tempNsIFile.exists()) {
       Zotero.logError(new Error(`Temp file does not exist: ${tempFilePath}`));
       throw new Error(`Temp file does not exist: ${tempFilePath}`);
     }
 
-    // Helper function to read binary content using XPCOM streams
     const readBinaryFile = (file: any): Uint8Array => {
       const Cc: any = Components.classes;
       const Ci: any = Components.interfaces;
 
-      const fis = Cc["@mozilla.org/network/file-input-stream;1"]
-                            .createInstance(Ci.nsIFileInputStream);
+      const fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(Ci.nsIFileInputStream);
       fis.init(file, -1, -1, 0);
 
-      const bis = Cc["@mozilla.org/binaryinputstream;1"]
-                            .createInstance(Ci.nsIBinaryInputStream);
+      const bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(Ci.nsIBinaryInputStream);
       bis.setInputStream(fis);
 
       const available = fis.available();
@@ -89,7 +80,7 @@ export async function uploadFile(
       const len = rawData.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) {
-          bytes[i] = rawData.charCodeAt(i);
+        bytes[i] = rawData.charCodeAt(i);
       }
       return bytes;
     };
@@ -102,15 +93,13 @@ export async function uploadFile(
       Zotero.logError(new Error(`Failed to read binary file with nsIFileInputStream: ${e.message || String(e)}`));
       throw e;
     }
-    
-    // Log file content details before creating Blob
-    Zotero.log(`[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`); 
+
+    Zotero.log(`[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`);
 
     const pdfBlob = new Blob([binaryContent], { type: "application/pdf" });
     Zotero.log(`[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`);
 
-    // Call the actual upload API
-    const uploadedFile = await ai.files.upload({
+    const uploadedFile = await client.files.upload({
       file: pdfBlob,
       config: {
         mimeType: "application/pdf",
@@ -120,7 +109,7 @@ export async function uploadFile(
     Zotero.log(`[Gemini] File uploaded: ${uploadedFile.name}`);
     return uploadedFile;
 
-  } catch (error: any) { // Catch block for the entire upload process
+  } catch (error: any) {
     Zotero.logError(new Error(`Error during file upload process for ${displayName}: ${error.message || String(error)}`));
     throw error;
   } finally {
@@ -128,7 +117,7 @@ export async function uploadFile(
       const tempFile = Zotero.File.pathToFile(tempFilePath);
       if (tempFile.exists()) {
         tempFile.remove(false);
-        Zotero.log(`Removed temporary file: ${tempFilePath}`); // Changed to Zotero.log
+        Zotero.log(`Removed temporary file: ${tempFilePath}`);
       }
     } catch (cleanupError: any) {
       Zotero.logError(
@@ -136,7 +125,7 @@ export async function uploadFile(
       );
     }
   }
-} // Correctly closes the uploadFile function
+}
 
 /**
  * Checks if a file exists on the Gemini server by trying to get its metadata.
@@ -144,18 +133,16 @@ export async function uploadFile(
 export async function getFileMetadata(
   fileName: string,
 ): Promise<GeminiFile | null> {
-  if (!ai) {
-    initGeminiModel();
-    if (!ai) {
-      throw new Error("Gemini API not initialized.");
-    }
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error("Gemini API not initialized.");
   }
   try {
-    const file = await ai.files.get({ name: fileName });
-    Zotero.log(`File metadata found for ${fileName}`); // Changed to Zotero.log
+    const file = await client.files.get({ name: fileName });
+    Zotero.log(`File metadata found for ${fileName}`);
     return file;
   } catch (error: any) {
-    Zotero.log(`File not found or expired for ${fileName}. Error: ${error.message || String(error)}`); // Changed to Zotero.log
+    Zotero.log(`File not found or expired for ${fileName}. Error: ${error.message || String(error)}`);
     return null;
   }
 }
@@ -168,16 +155,14 @@ export async function sendMessageToGemini(
   userParts: Part[],
   tools?: any[],
 ): Promise<{ responseText: string | null; groundingMetadata?: any }> {
-  const selectedModel = getPref("geminiSelectedModel") as string;
+  const selectedModel = getPref(PREF_SELECTED_MODEL) as string;
   Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
-  if (!ai) {
-    initGeminiModel();
-    if (!ai) {
-      return { 
-        responseText: "Error: Gemini model not initialized. Please set your API key in preferences.",
-        groundingMetadata: undefined 
-      };
-    }
+  const client = getGeminiClient();
+  if (!client) {
+    return {
+      responseText: "Error: Gemini model not initialized. Please set your API key in preferences.",
+      groundingMetadata: undefined
+    };
   }
 
   try {
@@ -186,7 +171,7 @@ export async function sendMessageToGemini(
       { role: "user", parts: userParts },
     ];
 
-    const systemInstructionText = getPref("geminiSystemPrompt" as keyof _ZoteroTypes.Prefs["PluginPrefsMap"]) as string | undefined;
+    const systemInstructionText = getPref(PREF_SYSTEM_PROMPT) as string | undefined;
 
     const request: any = {
         model: selectedModel,
@@ -202,8 +187,8 @@ export async function sendMessageToGemini(
 
     Zotero.log(`[Gemini] Full API Request: ${JSON.stringify(request, null, 2)}`);
 
-    const result: GenerateContentResponse = await ai.models.generateContent(request);
-    
+    const result: GenerateContentResponse = await client.models.generateContent(request);
+
     Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`);
 
     let responseText: string | null = null;
@@ -211,7 +196,7 @@ export async function sendMessageToGemini(
 
     if (result.candidates && result.candidates.length > 0) {
       const candidate = result.candidates[0];
-      
+
       if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
         const responsePartTexts: string[] = [];
         for (const part of candidate.content.parts) {
@@ -241,7 +226,7 @@ export async function sendMessageToGemini(
         }
 
         Zotero.logError(new Error(`No text part found in Gemini response. ${errorReason}`));
-        return { 
+        return {
           responseText: `Error: Did not receive a valid response from Gemini. ${errorReason}`,
           groundingMetadata: undefined
         };
@@ -252,9 +237,9 @@ export async function sendMessageToGemini(
     Zotero.logError(
       new Error(`Error sending message to Gemini: ${error.message || String(error)}`),
     );
-    return { 
+    return {
       responseText: `Error: Could not get response from Gemini. ${error.message || String(error)}`,
-      groundingMetadata: undefined 
+      groundingMetadata: undefined
     };
   }
 }

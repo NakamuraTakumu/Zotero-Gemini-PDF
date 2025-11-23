@@ -1,8 +1,9 @@
 // gemini-pdf/src/modules/readerPopup.ts
 import { createZToolkit } from "../utils/ztoolkit";
-import { getPref } from "../utils/prefs";
+import { getPref, setPref } from "../utils/prefs";
 import { config } from "../../package.json";
 import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
+import { PREF_PROMPT_FOR_SELECTION, PREF_USE_GOOGLE_SEARCH } from "../utils/constants";
 
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
@@ -30,7 +31,7 @@ export function buildReaderPopup(
     listeners: [
       {
         type: "click",
-        listener: (e: Event) => {
+        listener: async (e: Event) => { // Made listener async
           e.stopPropagation();
 
           const selectedText = addon.data.lastSelectedText || "";
@@ -39,16 +40,27 @@ export function buildReaderPopup(
             return;
           }
 
-          const promptTemplate = getPref("promptForSelection") || "";
+          const promptTemplate = getPref(PREF_PROMPT_FOR_SELECTION) || "";
           const fullPrompt = promptTemplate.replace("{selectedText}", selectedText);
           const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"*`;
 
-          if (addon.data.handleActionFromSelection) {
-            addon.data.handleActionFromSelection(fullPrompt, summaryText);
-          } else {
-            Zotero.debug(
-              `[${config.addonName}] handleActionFromSelection function not found.`,
-            );
+          let originalUseGoogleSearchPref: boolean | undefined;
+          try {
+            originalUseGoogleSearchPref = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
+            setPref(PREF_USE_GOOGLE_SEARCH, true); // Force Google Search for this query
+
+            if (addon.data.handleActionFromSelection) {
+              await addon.data.handleActionFromSelection(fullPrompt, summaryText);
+            } else {
+              Zotero.debug(
+                `[${config.addonName}] handleActionFromSelection function not found.`,
+              );
+            }
+          } finally {
+            // Restore original preference
+            if (originalUseGoogleSearchPref !== undefined) {
+              setPref(PREF_USE_GOOGLE_SEARCH, originalUseGoogleSearchPref);
+            }
           }
         },
       },
