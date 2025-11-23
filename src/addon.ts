@@ -34,6 +34,7 @@ class Addon {
         eventHandler?: (event: CustomEvent) => void;
         actualParentItem?: Zotero.Item | null;
         currentConversation?: Conversation | null;
+        isGeminiRequestInProgress?: boolean; // Per-pane request state
       };
     };
   };

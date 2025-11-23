@@ -130,6 +130,7 @@ export class ChatManager {
   }
 
   async processAndSendMessage(
+    paneId: string,
     textForHistory: string,
     textForApi: string,
     actualParentItem: Zotero.Item,
@@ -140,6 +141,8 @@ export class ChatManager {
       chatInput: HTMLTextAreaElement;
       sendButton: HTMLButtonElement;
       chatMessages: HTMLDivElement;
+      popupTriggerButton?: HTMLButtonElement | null;
+      originalButtonText?: string;
     }
   ) {
     if (!actualParentItem || !currentConversation) {
@@ -238,9 +241,16 @@ export class ChatManager {
       const errorMessage = error.message || String(error);
       ui.updateBotMessage(botMessageDiv, `Error: ${errorMessage}`);
     } finally {
+      addon.data.chatPanes[paneId].isGeminiRequestInProgress = false; // Set state to false
       ui.chatInput.disabled = false;
       ui.sendButton.disabled = false;
       ui.chatInput.focus();
+
+      // Re-enable the popup button if it exists
+      if (ui.popupTriggerButton) {
+        ui.popupTriggerButton.disabled = false;
+        ui.popupTriggerButton.innerHTML = ui.originalButtonText || "Geminiに聞く"; // Restore original text
+      }
     }
   }
 }

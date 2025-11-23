@@ -26,9 +26,19 @@ declare class Addon {
         };
         dialog?: DialogHelper;
         lastSelectedText?: string;
-          chatPane?: HTMLDivElement;
-          handleActionFromSelection?: (fullPrompt: string, summaryText: string) => Promise<void>;
+        chatPanes: {
+            [paneId: string]: {
+                chatManager?: import("./modules/reader/chat").ChatManager;
+                uiManager?: import("./modules/reader/ui").UIManager;
+                paneId: string;
+                itemId?: number;
+                eventHandler?: (event: CustomEvent) => void;
+                actualParentItem?: Zotero.Item | null;
+                currentConversation?: import("./types/chat").Conversation | null;
+                isGeminiRequestInProgress?: boolean;
+            };
         };
+    };
     hooks: typeof hooks;
     api: object;
     constructor();

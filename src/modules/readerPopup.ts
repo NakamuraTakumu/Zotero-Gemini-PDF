@@ -33,6 +33,16 @@ export function buildReaderPopup(
         type: "click",
         listener: async (e: Event) => { // Made listener async
           e.stopPropagation();
+          let actualParentItemId: number | undefined; // Declare actualParentItemId here
+
+          // Check if a request is already in progress for this item
+          const currentPaneId = Object.keys(addon.data.chatPanes).find(
+            (id) => addon.data.chatPanes[id].itemId === actualParentItemId
+          );
+          if (currentPaneId && addon.data.chatPanes[currentPaneId]?.isGeminiRequestInProgress) {
+            Zotero.debug(`[Gemini PDF] Request already in progress for item ${actualParentItemId}. Skipping.`);
+            return;
+          }
 
           const selectedText = addon.data.lastSelectedText || "";
           if (!selectedText) {
@@ -40,13 +50,17 @@ export function buildReaderPopup(
             return;
           }
 
+          // Disable the button and indicate loading
+          const targetButton = e.currentTarget as HTMLButtonElement;
+          const originalButtonText = targetButton.innerHTML;
+          targetButton.disabled = true;
+          targetButton.innerHTML = `思考中...`; // Indicate loading state
           const promptTemplate = getPref(PREF_PROMPT_FOR_SELECTION) || "";
           const fullPrompt = promptTemplate.replace("{selectedText}", selectedText);
           const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"*`;
 
           // Determine the actual parent item's ID
           const currentItem = (event.reader as any)._item;
-          let actualParentItemId: number | undefined;
 
           if (currentItem && currentItem.isAttachment() && currentItem.parentID) {
             const parentItem = await Zotero.Items.getAsync(currentItem.parentID);
@@ -61,7 +75,6 @@ export function buildReaderPopup(
           }
 
           Zotero.log(`[Gemini PDF] Dispatching gemini-pdf-action for itemId: ${actualParentItemId}`);
-
           // Dispatch a custom event instead of calling a global function
           const actionEvent = new (Zotero.getMainWindow() as any).CustomEvent('gemini-pdf-action', {
             bubbles: true,
@@ -70,6 +83,8 @@ export function buildReaderPopup(
               itemId: actualParentItemId,
               fullPrompt,
               summaryText,
+              popupTriggerButton: targetButton, // Pass the button reference
+              originalButtonText: originalButtonText, // Pass original text
             }
           });
           Zotero.getMainWindow().document.dispatchEvent(actionEvent);
