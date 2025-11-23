@@ -32,9 +32,9 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@vscode/markdown-it-katex": "^1.1.2",
     "dompurify": "^3.0.0",
     "katex": "^0.16.0",
-    "markdown-it-katex": "^2.0.3",
     "zotero-plugin-toolkit": "^5.1.0-beta.13"
   },
   "devDependencies": {

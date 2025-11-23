@@ -35,7 +35,7 @@ export class ReaderItemPaneFactory {
           </html:div>
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
-              <html:button id="send-button" class="send-button" onclick="geminiDebugClick()">Send</html:button>
+              <html:button id="send-button" class="send-button">Send</html:button>
           </html:div>
       </html:div>`,
       onInit: ({ body, refresh }) => {

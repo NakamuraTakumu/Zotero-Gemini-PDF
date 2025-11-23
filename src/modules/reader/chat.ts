@@ -6,15 +6,21 @@ import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
 import { ConversationManager } from "./conversation";
 import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
-import markdownItKatex from "markdown-it-katex";
+import markdownItKatex from "@vscode/markdown-it-katex";
 
 // Helper for rendering markdown
 const initMarkdownRenderer = (window: Window) => {
   const DOMPurify = createDOMPurify(window as any); // Cast window to any
-  const md = new MarkdownIt({ xhtmlOut: true }).use(markdownItKatex, {
+
+  // Handle CJS/ESM interop issue with the imported module
+  const katexPlugin = typeof markdownItKatex === 'function' 
+    ? markdownItKatex 
+    : (markdownItKatex as any).default;
+
+  const md = new MarkdownIt({ xhtmlOut: true }).use(katexPlugin, {
     throwOnError: false,
     errorColor: "#cc0000",
-    output: "html",
+    output: "mathml",
     strict: false,
   });
   return (text: string): string => {
