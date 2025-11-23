@@ -18,11 +18,11 @@ export class ReaderItemPaneFactory {
       pluginID: addon.data.config.addonID,
       header: {
         l10nID: getLocaleID("item-section-example1-head-text"),
-        icon: "chrome://zotero/skin/16/universal/book.svg",
+        icon: `chrome://${addon.data.config.addonRef}/content/icons/gemini.svg`,
       },
       sidenav: {
         l10nID: getLocaleID("item-section-example1-sidenav-tooltip"),
-        icon: "chrome://zotero/skin/20/universal/save.svg",
+        icon: `chrome://${addon.data.config.addonRef}/content/icons/gemini.svg`,
       },
       bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
           <html:div class="chat-messages" id="chat-messages"></html:div>
