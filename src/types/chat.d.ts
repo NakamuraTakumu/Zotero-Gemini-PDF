@@ -37,4 +37,5 @@ export interface ConversationHistoryItem {
   role: "user" | "model";
   model?: string; // Only for role: "model"
   parts: { text: string }[];
+  groundingMetadata?: any;
 }

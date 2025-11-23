@@ -237,3 +237,30 @@
   border-top: 1px solid var(--chat-border-color);
   margin: 1em 0;
 }
+
+/* Grounding Metadata Sources */
+*|div.sources-container {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--chat-border-color);
+  font-size: 0.85em;
+}
+
+*|div.sources-container b {
+  font-weight: bold;
+  display: block;
+  margin-bottom: 4px;
+}
+
+*|div.sources-container a {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px; /* Reduced for less line spacing */
+  text-decoration: none;
+}
+
+*|div.sources-container a:hover {
+  text-decoration: underline;
+}

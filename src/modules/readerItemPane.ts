@@ -244,6 +244,23 @@ export class ReaderItemPaneFactory {
 
         if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer) return;
 
+        // Handle clicks on external links
+        chatMessages.addEventListener("click", (e: Event) => {
+          const target = e.target as HTMLElement;
+
+          // Find the closest ancestor 'A' tag with an 'href'
+          const link = target.closest("a[href]");
+          if (link) {
+            const url = link.getAttribute("href");
+            // Check if it's an external link, and if so, open in browser
+            if (url && (url.startsWith("http:") || url.startsWith("https:"))) {
+              e.preventDefault();
+              e.stopPropagation();
+              Zotero.launchURL(url);
+            }
+          }
+        });
+
         const geminiModelSelect = body.querySelector("#gemini-model-select") as HTMLSelectElement;
         if (!geminiModelSelect) return;
 
@@ -341,9 +358,32 @@ export class ReaderItemPaneFactory {
 
             chatMessages.innerHTML = "";
             for (const message of currentConversation.history) {
-              const messageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+              const messageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
               messageDiv.className = `message ${message.role}-message`;
-              messageDiv.innerHTML = renderMarkdown(message.parts[0].text);
+
+              let messageHtml = renderMarkdown(message.parts[0].text);
+
+              if (message.role === 'model' && message.groundingMetadata) {
+                let sources = '';
+                if (message.groundingMetadata.groundingChunks && message.groundingMetadata.groundingChunks.length > 0) {
+                  sources = message.groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
+                    if (chunk.web) {
+                      return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+                    }
+                    return null;
+                  }).filter(Boolean).join('');
+                } else if (message.groundingMetadata.retrievedReferences && message.groundingMetadata.retrievedReferences.length > 0) {
+                  sources = message.groundingMetadata.retrievedReferences.map((ref: any, index: number) => 
+                    `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
+                  ).join('');
+                }
+
+                if (sources) {
+                  messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+                }
+              }
+
+              messageDiv.innerHTML = messageHtml;
               chatMessages.appendChild(messageDiv);
             }
             chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -456,9 +496,29 @@ export class ReaderItemPaneFactory {
                 { urlContext: {} }
               ];
             }
-            const botResponseText = await sendMessageToGemini(historyForApi, userParts, tools);
+                                    const { responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(historyForApi, userParts, tools);
+                        
+                                    let messageHtml = renderMarkdown(botResponseText || "No response.");
+                        
+                                    if (groundingMetadata) {
+                                      let sources = '';
+                                      if (groundingMetadata.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
+                                        sources = groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
+                                          if (chunk.web) {
+                                            return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+                                          }
+                                          return null;
+                                        }).filter(Boolean).join('');
+                                      } else if (groundingMetadata.retrievedReferences && groundingMetadata.retrievedReferences.length > 0) {
+                                        sources = groundingMetadata.retrievedReferences.map((ref: any, index: number) =>
+                                          `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
+                                        ).join('');
+                                      }
 
-            updateBotMessage(botMessageDiv, renderMarkdown(botResponseText || "No response."));
+                                      if (sources) {
+                                        messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+                                      }
+                                    }            updateBotMessage(botMessageDiv, messageHtml);
 
             const selectedModelName = getPref("geminiSelectedModel") as string;
             const botMessage: ConversationHistoryItem = {
@@ -467,6 +527,7 @@ export class ReaderItemPaneFactory {
               role: "model",
               model: selectedModelName,
               parts: [{ text: botResponseText || "" }],
+              groundingMetadata: groundingMetadata,
             };
             currentConversation.history.push(botMessage);
             await ReaderItemPaneFactory.saveConversation(actualParentItem, currentConversation);
