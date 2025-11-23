@@ -3,6 +3,10 @@ import { registerPrefsScripts } from "./modules/preferenceScript"; // Import the
 import { initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
 import { buildReaderPopup } from "./modules/readerPopup";
+import { CONVERSATION_ATTACHMENT_TITLE } from "./utils/constants"; // Import CONVERSATION_ATTACHMENT_TITLE
+import { ConversationManager } from "./modules/reader/conversation"; // Import ConversationManager
+
+const observerID = "geminiPDFPluginObserver"; // Define a unique ID for the observer
 
 async function onStartup() {
   await Promise.all([
@@ -17,6 +21,10 @@ async function onStartup() {
   };
 
   initLocale();
+
+  // Register the observer for item changes
+  Zotero.Notifier.registerObserver(hooks, ['item'], observerID);
+  Zotero.log('GeminiPDFPlugin: Item observer registered.');
 
   // Register the reader item pane section
   await ReaderItemPaneFactory.registerReaderItemPaneSection();
@@ -66,6 +74,8 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 function onShutdown(): void {
   ztoolkit.unregisterAll();
+  Zotero.Notifier.unregisterObserver(observerID); // Unregister the observer
+  Zotero.log('GeminiPDFPlugin: Item observer unregistered.');
   // Remove addon object
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed
@@ -76,14 +86,73 @@ async function onPrefsWindowLoad(window: Window): Promise<void> {
   await registerPrefsScripts(window);
 }
 
+/**
+ * Zotero Notifier callback function.
+ * @param {string} event - The type of event (e.g., 'add', 'modify', 'delete').
+ * @param {string} type - The type of object (e.g., 'item', 'collection', 'tag').
+ * @param {string[]} ids - An array of IDs of the affected objects.
+ * @param {string[]} extraData - Additional data related to the event.
+ */
+async function notify(event: string, type: string, ids: (string | number)[], extraData: any) {
+  if (type === 'item') {
+    for (const id of ids) {
+      const item = await Zotero.Items.getAsync(id);
+
+      if (!item) {
+        // Item might have been deleted before we could retrieve it
+        continue;
+      }
+
+      // Check if the item is our chat history attachment
+      if (Zotero.ItemTypes.getName(item.itemType) === 'attachment' && item.getField('title') === CONVERSATION_ATTACHMENT_TITLE) {
+        Zotero.log(`[Gemini PDF] Chat history attachment event: ${event} for item ID: ${id}, parent ID: ${item.parentID}`);
+
+        // Iterate through active chat panes to find the one associated with this parent item
+        for (const paneId in addon.data.chatPanes) {
+          const paneState = addon.data.chatPanes[paneId];
+          if (paneState.itemId === item.parentID) {
+            Zotero.log(`[Gemini PDF] Reloading conversation for pane ${paneId} due to attachment change.`);
+
+            const { chatManager, uiManager, actualParentItem, doc, body } = paneState;
+
+            if (!chatManager || !uiManager || !actualParentItem || !doc || !body) {
+                Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: Missing required components.`));
+                continue;
+            }
+
+            const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
+            if (!chatMessages) {
+                Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: chatMessages element not found.`));
+                continue;
+            }
+
+            try {
+                const reloadedConversation = await ConversationManager.loadConversation(actualParentItem);
+                paneState.currentConversation = reloadedConversation; // Update the pane's current conversation
+                uiManager._renderChatMessages(reloadedConversation);
+            } catch (e: any) {
+                Zotero.logError(new Error(`[Gemini PDF] Error reloading conversation for pane ${paneId}: ${e.message || String(e)}`));
+                uiManager.addBotMessage(`Error reloading conversation: ${e.message || String(e)}`, 'error-message');
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 // Add your hooks here. For element click, etc.
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
 
-export default {
+const hooks = {
   onStartup,
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
   onPrefsWindowLoad, // Add the new hook
+  notify, // Add the notify method to hooks
 };
+
+export default hooks;
+

@@ -52,7 +52,7 @@ export class ReaderItemPaneFactory {
         if (!chatMessages) return;
 
         const chatManager = new ChatManager(window);
-        const uiManager = new UIManager(doc, body, chatMessages);
+        const uiManager = new UIManager(doc, body, chatMessages, chatManager); // Pass chatManager to UIManager
         uiManager.registerPrefObservers();
 
         const handleGeminiAction = (event: Event) => {
@@ -83,6 +83,7 @@ export class ReaderItemPaneFactory {
                 actualParentItem,
                 currentConversation,
                 {
+                  uiManager: uiManager, // Pass uiManager reference
                   addBotMessage: uiManager.addBotMessage,
                   updateBotMessage: uiManager.updateBotMessage,
                   chatInput,
@@ -101,6 +102,8 @@ export class ReaderItemPaneFactory {
           uiManager,
           paneId,
           eventHandler: handleGeminiAction,
+          doc, // Store doc
+          body, // Store body
         };
       },
       onDestroy: ({ body }) => {
@@ -169,33 +172,7 @@ export class ReaderItemPaneFactory {
         if (actualParentItem) {
           try {
             currentConversation = await ConversationManager.loadConversation(actualParentItem);
-            chatMessages.innerHTML = "";
-            for (const message of currentConversation.history) {
-              const messageDiv = doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
-              messageDiv.className = `message ${message.role}-message`;
-              let messageHtml = chatManager.renderMarkdown(message.parts[0].text);
-              if (message.role === 'model' && message.groundingMetadata) {
-                let sources = '';
-                if (message.groundingMetadata.groundingChunks && message.groundingMetadata.groundingChunks.length > 0) {
-                  sources = message.groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
-                    if (chunk.web) {
-                      return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
-                    }
-                    return null;
-                  }).filter(Boolean).join('');
-                } else if (message.groundingMetadata.retrievedReferences && message.groundingMetadata.retrievedReferences.length > 0) {
-                  sources = message.groundingMetadata.retrievedReferences.map((ref: any, index: number) =>
-                    `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
-                  ).join('');
-                }
-                if (sources) {
-                  messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
-                }
-              }
-              messageDiv.innerHTML = messageHtml;
-              chatMessages.appendChild(messageDiv);
-            }
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            uiManager._renderChatMessages(currentConversation); // Corrected call
           } catch (e: any) {
             Zotero.logError(new Error(`Error loading conversation: ${e.message || String(e)}`));
             uiManager.addBotMessage(`Error loading conversation: ${e.message || String(e)}`, 'error-message');
@@ -242,7 +219,7 @@ export class ReaderItemPaneFactory {
             await chatManager.processAndSendMessage(
               paneId, // Pass paneId
               messageText, messageText, actualParentItem, currentConversation,
-              { addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
+              { uiManager: uiManager, addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
             );
           }
         };

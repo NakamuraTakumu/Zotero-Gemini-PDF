@@ -136,6 +136,7 @@ export class ChatManager {
     actualParentItem: Zotero.Item,
     currentConversation: Conversation,
     ui: {
+      uiManager: import("./ui").UIManager; // Add UIManager to the UI context
       addBotMessage: (html: string, className?: string) => HTMLDivElement;
       updateBotMessage: (element: HTMLDivElement, html: string) => void;
       chatInput: HTMLTextAreaElement;
@@ -178,6 +179,7 @@ export class ChatManager {
 
     ConversationManager.addUserMessage(currentConversation, textForHistory);
     await ConversationManager.saveConversation(actualParentItem, currentConversation);
+    ui.uiManager._renderChatMessages(currentConversation); // Force re-render after adding user message
 
     const botMessageDiv = ui.addBotMessage("Typing...", "bot-message");
 

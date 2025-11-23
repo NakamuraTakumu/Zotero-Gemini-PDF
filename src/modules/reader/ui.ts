@@ -1,16 +1,20 @@
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
+import { Conversation } from "../../types/chat"; // Import Conversation type
+import { ChatManager } from "./chat"; // Import ChatManager type
 
 export class UIManager {
   private doc: Document;
   private body: HTMLElement;
   private chatMessages: HTMLDivElement;
   private prefObserverKeys: symbol[] = [];
+  private chatManager: ChatManager; // Add chatManager property
 
-  constructor(doc: Document, body: HTMLElement, chatMessages: HTMLDivElement) {
+  constructor(doc: Document, body: HTMLElement, chatMessages: HTMLDivElement, chatManager: ChatManager) {
     this.doc = doc;
     this.body = body;
     this.chatMessages = chatMessages;
+    this.chatManager = chatManager; // Assign chatManager
   }
 
   registerPrefObservers() {
@@ -91,6 +95,36 @@ export class UIManager {
       setPref(PREF_USE_GOOGLE_SEARCH, newValue);
       Zotero.log(`[Gemini PDF] UI: Use Google Search changed to: ${newValue}.`);
     });
+  }
+
+  _renderChatMessages(conversation: Conversation) {
+    this.chatMessages.innerHTML = "";
+    for (const message of conversation.history) {
+      const messageDiv = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
+      messageDiv.className = `message ${message.role}-message`;
+      let messageHtml = this.chatManager.renderMarkdown(message.parts[0].text);
+      if (message.role === 'model' && message.groundingMetadata) {
+        let sources = '';
+        if (message.groundingMetadata.groundingChunks && message.groundingMetadata.groundingChunks.length > 0) {
+          sources = message.groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
+            if (chunk.web) {
+              return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+            }
+            return null;
+          }).filter(Boolean).join('');
+        } else if (message.groundingMetadata.retrievedReferences && message.groundingMetadata.retrievedReferences.length > 0) {
+          sources = message.groundingMetadata.retrievedReferences.map((ref: any, index: number) =>
+            `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
+          ).join('');
+        }
+        if (sources) {
+          messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+        }
+      }
+      messageDiv.innerHTML = messageHtml;
+      this.chatMessages.appendChild(messageDiv);
+    }
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
 
   addBotMessage = (html: string, className: string = 'bot-message'): HTMLDivElement => {
