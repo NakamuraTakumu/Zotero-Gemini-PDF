@@ -11,6 +11,11 @@ async function onStartup() {
     Zotero.uiReadyPromise,
   ]);
 
+  // Define a global debug function for testing clicks
+  _globalThis.geminiDebugClick = () => {
+    Zotero.log("[Gemini PDF] Global debug click fired!");
+  };
+
   initLocale();
 
   // Register the reader item pane section

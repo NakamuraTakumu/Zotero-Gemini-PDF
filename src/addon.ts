@@ -3,6 +3,9 @@ const config = packageJson.config;
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
+import { ChatManager } from "./modules/reader/chat";
+import { UIManager } from "./modules/reader/ui";
+import { Conversation } from "./types/chat";
 
 class Addon {
   public data: {
@@ -22,8 +25,17 @@ class Addon {
     };
     dialog?: DialogHelper;
     lastSelectedText?: string;
-    chatPane?: HTMLDivElement;
-    handleActionFromSelection?: (fullPrompt: string, summaryText: string) => Promise<void>;
+    chatPanes: {
+      [paneId: string]: {
+        chatManager?: ChatManager;
+        uiManager?: UIManager;
+        paneId: string;
+        itemId?: number; // Add itemId
+        eventHandler?: (event: CustomEvent) => void;
+        actualParentItem?: Zotero.Item | null;
+        currentConversation?: Conversation | null;
+      };
+    };
   };
   // Lifecycle hooks
   public hooks: typeof hooks;
@@ -37,6 +49,7 @@ class Addon {
       env: __env__,
       initialized: false,
       ztoolkit: createZToolkit(),
+      chatPanes: {},
     };
     this.hooks = hooks;
     this.api = {};

@@ -44,24 +44,35 @@ export function buildReaderPopup(
           const fullPrompt = promptTemplate.replace("{selectedText}", selectedText);
           const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"*`;
 
-          let originalUseGoogleSearchPref: boolean | undefined;
-          try {
-            originalUseGoogleSearchPref = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
-            setPref(PREF_USE_GOOGLE_SEARCH, true); // Force Google Search for this query
+          // Determine the actual parent item's ID
+          const currentItem = (event.reader as any)._item;
+          let actualParentItemId: number | undefined;
 
-            if (addon.data.handleActionFromSelection) {
-              await addon.data.handleActionFromSelection(fullPrompt, summaryText);
-            } else {
-              Zotero.debug(
-                `[${config.addonName}] handleActionFromSelection function not found.`,
-              );
-            }
-          } finally {
-            // Restore original preference
-            if (originalUseGoogleSearchPref !== undefined) {
-              setPref(PREF_USE_GOOGLE_SEARCH, originalUseGoogleSearchPref);
-            }
+          if (currentItem && currentItem.isAttachment() && currentItem.parentID) {
+            const parentItem = await Zotero.Items.getAsync(currentItem.parentID);
+            actualParentItemId = parentItem?.id;
+          } else if (currentItem) {
+            actualParentItemId = currentItem.id;
           }
+
+          if (!actualParentItemId) {
+              Zotero.logError(new Error(`[${config.addonName}] Could not determine actualParentItemId for selected text action.`));
+              return;
+          }
+
+          Zotero.log(`[Gemini PDF] Dispatching gemini-pdf-action for itemId: ${actualParentItemId}`);
+
+          // Dispatch a custom event instead of calling a global function
+          const actionEvent = new (Zotero.getMainWindow() as any).CustomEvent('gemini-pdf-action', {
+            bubbles: true,
+            cancelable: true,
+            detail: {
+              itemId: actualParentItemId,
+              fullPrompt,
+              summaryText,
+            }
+          });
+          Zotero.getMainWindow().document.dispatchEvent(actionEvent);
         },
       },
       {

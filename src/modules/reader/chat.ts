@@ -14,7 +14,7 @@ const initMarkdownRenderer = (window: Window) => {
   const md = new MarkdownIt({ xhtmlOut: true }).use(markdownItKatex, {
     throwOnError: false,
     errorColor: "#cc0000",
-    output: "mathml",
+    output: "html",
     strict: false,
   });
   return (text: string): string => {

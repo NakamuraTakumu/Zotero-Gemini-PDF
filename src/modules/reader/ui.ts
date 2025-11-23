@@ -3,22 +3,59 @@ import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "..
 
 export class UIManager {
   private doc: Document;
+  private body: HTMLElement;
   private chatMessages: HTMLDivElement;
+  private prefObserverKeys: symbol[] = [];
 
-  constructor(doc: Document, chatMessages: HTMLDivElement) {
+  constructor(doc: Document, body: HTMLElement, chatMessages: HTMLDivElement) {
     this.doc = doc;
+    this.body = body;
     this.chatMessages = chatMessages;
   }
 
+  registerPrefObservers() {
+    const modelObserverKey = Zotero.Prefs.registerObserver(
+      `extensions.zotero.GeminiPDF.${PREF_SELECTED_MODEL}`,
+      () => {
+        const geminiModelSelect = this.body.querySelector("#gemini-model-select") as HTMLSelectElement;
+        if (geminiModelSelect) {
+          const selectedModel = getPref(PREF_SELECTED_MODEL) || "";
+          geminiModelSelect.value = selectedModel;
+          Zotero.log(`[Gemini PDF] Pref observer updated model selection to: ${selectedModel}`);
+        }
+      }
+    );
+    this.prefObserverKeys.push(modelObserverKey);
+
+    const searchObserverKey = Zotero.Prefs.registerObserver(
+      `extensions.zotero.GeminiPDF.${PREF_USE_GOOGLE_SEARCH}`,
+      () => {
+        const useGoogleSearchCheckbox = this.body.querySelector("#use-google-search-checkbox") as HTMLInputElement;
+        if (useGoogleSearchCheckbox) {
+          const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
+          useGoogleSearchCheckbox.checked = useGoogleSearch;
+          Zotero.log(`[Gemini PDF] Pref observer updated Google Search to: ${useGoogleSearch}`);
+        }
+      }
+    );
+    this.prefObserverKeys.push(searchObserverKey);
+  }
+
+  unregisterPrefObservers() {
+    this.prefObserverKeys.forEach(key => Zotero.Prefs.unregisterObserver(key));
+    Zotero.log("[Gemini PDF] Unregistered preference observers.");
+    this.prefObserverKeys = [];
+  }
+
   initModelSelector() {
-    const geminiModelSelect = this.chatMessages.ownerDocument!.querySelector("#gemini-model-select") as HTMLSelectElement;
+    const geminiModelSelect = this.body.querySelector("#gemini-model-select") as HTMLSelectElement;
     if (!geminiModelSelect) return;
 
     const availableModelsString = getPref(PREF_MODEL_LIST) || "";
     const availableModels = availableModelsString.split(',').map(m => m.trim()).filter(m => m.length > 0);
     const selectedModel = getPref(PREF_SELECTED_MODEL) || "";
     Zotero.log(`[Gemini PDF] UI: Initializing model selector. Saved PREF_SELECTED_MODEL value is: '${selectedModel}'.`);
-    Zotero.log(`[Gemini PDF] UI: Initializing model selector. Saved PREF_MODEL_LIST value is: '${availableModelsString}'.`);
+    Zotero.log(`[Gemini PDF] UI: Currently selected model from preferences: '${selectedModel}'.`);
 
 
     geminiModelSelect.innerHTML = "";
@@ -42,7 +79,7 @@ export class UIManager {
   }
 
   initGoogleSearchCheckbox() {
-    const useGoogleSearchCheckbox = this.chatMessages.ownerDocument!.querySelector("#use-google-search-checkbox") as HTMLInputElement;
+    const useGoogleSearchCheckbox = this.body.querySelector("#use-google-search-checkbox") as HTMLInputElement;
     if (!useGoogleSearchCheckbox) return; // Added null check
 
     const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
