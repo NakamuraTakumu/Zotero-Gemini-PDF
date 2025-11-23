@@ -188,12 +188,16 @@ export async function sendMessageToGemini(
     const request: any = {
         model: selectedModel,
         contents: fullConversation,
-        tools: tools, // Add this line for tools
+        config: { // Add config object
+          tools: tools, // Move tools inside config
+        },
     };
 
     if (systemInstructionText) {
         request.systemInstruction = { parts: [{ text: systemInstructionText }] };
     }
+
+    Zotero.log(`[Gemini] Full API Request: ${JSON.stringify(request, null, 2)}`);
 
     const result: GenerateContentResponse = await ai.models.generateContent(request);
     

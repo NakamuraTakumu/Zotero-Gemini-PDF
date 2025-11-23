@@ -449,10 +449,12 @@ export class ReaderItemPaneFactory {
             }
 
             const useGoogleSearch = getPref("geminiUseGoogleSearch") as boolean;
-            const tools: any[] = [];
+            let tools: any[] | undefined = undefined;
             if (useGoogleSearch) {
-              tools.push({ url_context: {} });
-              tools.push({ googleSearch: {} });
+              tools = [
+                { googleSearch: {} },
+                { urlContext: {} }
+              ];
             }
             const botResponseText = await sendMessageToGemini(historyForApi, userParts, tools);
 
