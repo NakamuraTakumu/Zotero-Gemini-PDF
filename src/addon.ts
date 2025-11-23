@@ -35,6 +35,8 @@ class Addon {
         actualParentItem?: Zotero.Item | null;
         currentConversation?: Conversation | null;
         isGeminiRequestInProgress?: boolean; // Per-pane request state
+        doc?: Document; // Add doc property
+        body?: HTMLElement; // Add body property
       };
     };
   };
