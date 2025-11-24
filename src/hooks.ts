@@ -111,29 +111,29 @@ async function notify(event: string, type: string, ids: (string | number)[], ext
         // Iterate through active chat panes to find the one associated with this parent item
         for (const paneId in addon.data.chatPanes) {
           const paneState = addon.data.chatPanes[paneId];
-          if (paneState.itemId === item.parentID) {
+          if (paneState.zoteroContext.itemId === item.parentID) {
             Zotero.log(`[Gemini PDF] Reloading conversation for pane ${paneId} due to attachment change.`);
 
-            const { chatManager, uiManager, actualParentItem, doc, body } = paneState;
+            const { managers, zoteroContext, uiElements, chatData } = paneState;
 
-            if (!chatManager || !uiManager || !actualParentItem || !doc || !body) {
+            if (!managers.chatManager || !managers.uiManager || !zoteroContext.actualParentItem || !uiElements.doc || !uiElements.body) {
                 Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: Missing required components.`));
                 continue;
             }
 
-            const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
+            const chatMessages = uiElements.body.querySelector("#chat-messages") as HTMLDivElement;
             if (!chatMessages) {
                 Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: chatMessages element not found.`));
                 continue;
             }
 
             try {
-                const reloadedConversation: ChatSessionHistory = await ConversationManager.loadConversation(actualParentItem);
-                paneState.currentConversation = reloadedConversation; // Update the pane's current conversation
-                uiManager._renderChatMessages(reloadedConversation);
+                const reloadedConversation: ChatSessionHistory = await ConversationManager.loadConversation(zoteroContext.actualParentItem);
+                paneState.chatData.currentConversation = reloadedConversation; // Update the pane's current conversation
+                managers.uiManager._renderChatMessages(reloadedConversation);
             } catch (e: any) {
                 Zotero.logError(new Error(`[Gemini PDF] Error reloading conversation for pane ${paneId}: ${e.message || String(e)}`));
-                uiManager.addBotMessage(`Error reloading conversation: ${e.message || String(e)}`, 'error-message');
+                managers.uiManager.addBotMessage(`Error reloading conversation: ${e.message || String(e)}`, 'error-message');
             }
           }
         }

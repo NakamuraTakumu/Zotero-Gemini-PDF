@@ -3,9 +3,7 @@ const config = packageJson.config;
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
-import { ChatManager } from "./modules/reader/chat";
-import { UIManager } from "./modules/reader/ui";
-import { ChatSessionHistory, ParentItemFileMetadata } from "./types/chat";
+import { ChatSessionHistory, ParentItemFileMetadata, ChatPaneState } from "./types/chat";
 
 class Addon {
   public data: {
@@ -26,19 +24,7 @@ class Addon {
     dialog?: DialogHelper;
     lastSelectedText?: string;
     chatPanes: {
-      [paneId: string]: {
-        chatManager?: ChatManager;
-        uiManager?: UIManager;
-        paneId: string;
-        itemId?: number; // Add itemId
-        eventHandler?: (event: CustomEvent) => void;
-        actualParentItem?: Zotero.Item | null;
-        currentConversation?: ChatSessionHistory | null;
-        parentItemFileMetadata?: ParentItemFileMetadata | null;
-        isGeminiRequestInProgress?: boolean; // Per-pane request state
-        doc?: Document; // Add doc property
-        body?: HTMLElement; // Add body property
-      };
+      [paneId: string]: ChatPaneState;
     };
   };
   // Lifecycle hooks

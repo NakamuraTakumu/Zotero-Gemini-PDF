@@ -1,5 +1,5 @@
 item-section-example1-head-text =
-    .label = Plugin Template: Item Info
+    .label = Gemini Chat
 item-section-example1-sidenav-tooltip =
     .tooltiptext = This is Plugin Template section (item info)
 item-section-example2-head-text =

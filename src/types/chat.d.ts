@@ -48,6 +48,56 @@ export interface ChatMessage {
   groundingMetadata?: any;
 }
 
+// ============================================================================
+// New ChatPaneState Interface for refactoring
+// ============================================================================
+
+import { ChatManager } from "../modules/reader/chat";
+import { UIManager } from "../modules/reader/ui";
+
+/**
+ * 各チャットペインの状態を管理するためのインターフェース
+ *addon.data.chatPanes[paneId]に格納される情報の構造を定義する
+ */
+export interface ChatPaneState {
+  paneId: string;
+
+  // UI/DOM関連の要素
+  uiElements: {
+    doc: Document;
+    body: HTMLElement;
+  };
+
+  // ペイン固有のロジックインスタンス
+  managers: {
+    chatManager: ChatManager;
+    uiManager: UIManager;
+  };
+
+  // Zoteroアイテムに関するコンテキスト情報
+  zoteroContext: {
+    itemId?: number;
+    actualParentItem?: Zotero.Item | null;
+  };
+
+  // チャットセッション固有のデータ
+  chatData: {
+    currentConversation?: ChatSessionHistory | null;
+    parentItemFileMetadata?: ParentItemFileMetadata | null;
+  };
+
+  // ランタイムの状態と制御フラグ
+  runtimeState: {
+    eventHandler?: (event: CustomEvent) => void;
+    isGeminiRequestInProgress?: boolean;
+  };
+}
+
+// ============================================================================
+// Old Interfaces - Keep temporarily for backward compatibility if needed
+// These will be removed once all code is migrated to new interfaces
+// ============================================================================
+
 /**
  * 現在のコードベースでConversationManagerが利用している会話の型定義
  * 新しいChatSessionHistoryへの移行を考慮し、一時的に残す
@@ -84,3 +134,4 @@ export interface ConversationHistoryItem {
   parts: { text: string }[];
   groundingMetadata?: any;
 }
+

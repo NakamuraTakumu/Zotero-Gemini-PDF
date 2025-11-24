@@ -1,3 +1,4 @@
+import { ReaderItemPaneFactory } from "../readerItemPane"; // ReaderItemPaneFactory をインポート
 import { getPref } from "../../utils/prefs";
 import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
 import { ChatSessionHistory, ChatMessage, ParentItemFileMetadata, ParentItemFileMetadataFile } from "../../types/chat"; // ParentItemFileMetadata, ParentItemFileMetadataFile をインポート
@@ -263,7 +264,8 @@ export class ChatManager {
       const errorMessage = error.message || String(error);
       ui.updateBotMessage(botMessageDiv, `Error: ${errorMessage}`);
     } finally {
-      addon.data.chatPanes[paneId].isGeminiRequestInProgress = false; // Set state to false
+      addon.data.chatPanes[paneId].runtimeState.isGeminiRequestInProgress = false; // Set state to false
+      ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, false); // Dispatch event on completion/error
       ui.chatInput.disabled = false;
       ui.sendButton.disabled = false;
       ui.chatInput.focus();
