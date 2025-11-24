@@ -8,9 +8,11 @@ export class ChatSessionManager {
   private parentItem: Zotero.Item;
   private _sessions: ChatSessionHistory[] = [];
   private _activeSession: ChatSessionHistory | null = null;
+  private onActiveSessionChange: (session: ChatSessionHistory) => void;
 
-  constructor(parentItem: Zotero.Item) {
+  constructor(parentItem: Zotero.Item, onActiveSessionChange: (session: ChatSessionHistory) => void) {
     this.parentItem = parentItem;
+    this.onActiveSessionChange = onActiveSessionChange;
   }
 
   /**
@@ -53,7 +55,26 @@ export class ChatSessionManager {
       })[0];
       this._activeSession = latestConversation;
     }
+    if (this._activeSession) {
+      this.onActiveSessionChange(this._activeSession);
+    }
     Zotero.debug(`[ChatSessionManager] Initialized with active session: ${this._activeSession?.metadata.chatId}`);
+  }
+
+  /**
+   * Switches the active session to the one with the given ID.
+   * @param chatId The ID of the session to switch to.
+   */
+  switchSession(chatId: string): ChatSessionHistory | null {
+    const sessionToActivate = this.getSessionById(chatId);
+    if (sessionToActivate) {
+      this._activeSession = sessionToActivate;
+      this.onActiveSessionChange(this._activeSession);
+      Zotero.debug(`[ChatSessionManager] Switched active session to: ${chatId}`);
+      return this._activeSession;
+    }
+    Zotero.logError(new Error(`[ChatSessionManager] Could not find session with ID: ${chatId} to switch to.`));
+    return null;
   }
 
   /**
@@ -93,6 +114,7 @@ export class ChatSessionManager {
     };
     this._sessions.push(newConversation);
     this._activeSession = newConversation;
+    this.onActiveSessionChange(newConversation);
     await ConversationManager.saveConversation(this.parentItem, newConversation);
     Zotero.debug(`[ChatSessionManager] Created new session: ${title} (${newChatId})`);
     return newConversation;

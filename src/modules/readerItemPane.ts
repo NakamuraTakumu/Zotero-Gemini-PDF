@@ -62,7 +62,9 @@ export class ReaderItemPaneFactory {
           <html:div class="chat-messages" id="chat-messages"></html:div>
           <html:div class="chat-resizer" id="chat-resizer"></html:div>
           <html:div class="chat-model-selector-area">
-              <html:label for="gemini-model-select">Select Model:</html:label>
+              <html:label for="chat-session-switcher">Session:</html:label>
+              <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
+              <html:label for="gemini-model-select" style="margin-left: 10px;">Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
               <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
               <html:input type="checkbox" id="use-google-search-checkbox" />
@@ -228,7 +230,13 @@ export class ReaderItemPaneFactory {
             const window = doc.defaultView as any;
             const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
 
-            const chatSessionManager = new ChatSessionManager(actualParentItem);
+            const chatSessionManager = new ChatSessionManager(actualParentItem, (session) => {
+                // onActiveSessionChange callback
+                if (paneState.managers) {
+                    paneState.managers.uiManager._renderChatMessages(session);
+                    paneState.chatData.currentConversation = session;
+                }
+            });
             await chatSessionManager.init();
 
             const chatManager = new ChatManager(window, chatSessionManager);
@@ -249,6 +257,7 @@ export class ReaderItemPaneFactory {
         // Initialize UI elements using UIManager methods
         managers.uiManager.initModelSelector();
         managers.uiManager.initGoogleSearchCheckbox();
+        managers.uiManager.initSessionSwitcher();
 
         const doc = uiElements.doc;
         const chatMessages = uiElements.body.querySelector("#chat-messages") as HTMLDivElement;
@@ -380,9 +389,10 @@ export class ReaderItemPaneFactory {
           }
 
           // Use ChatSessionManager to create a new session
-          const newConversation = await paneState.chatSessionManager?.createSession("新しいチャット"); // Use default title for now
+          const newConversation = await (paneState as any).chatSessionManager?.createSession("新しいチャット"); // Use default title for now
           if (newConversation) {
-            managers.uiManager._renderChatMessages(newConversation); // Clear and render empty chat
+            managers.uiManager.updateSessionSwitcher();
+            // The rest of the UI update is handled by the onActiveSessionChange callback
             chatInput.value = ""; // Clear input field
             chatData.parentItemFileMetadata = null; // Reset parentItemFileMetadata for the new session
             Zotero.debug(`[Gemini PDF] New chat session started with ID: ${newConversation.metadata.chatId}`);

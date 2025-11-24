@@ -97,6 +97,44 @@ export class UIManager {
     });
   }
 
+  initSessionSwitcher() {
+    const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
+    if (!sessionSwitcher) return;
+
+    this.updateSessionSwitcher(); // Populate with initial data
+
+    sessionSwitcher.onchange = (e) => {
+      const newSessionId = (e.target as HTMLSelectElement).value;
+      if (newSessionId) {
+        this.chatManager.switchSession(newSessionId);
+      }
+    };
+  }
+
+  updateSessionSwitcher() {
+    const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
+    if (!sessionSwitcher) return;
+    
+    const sessions = this.chatManager.getAllSessions();
+    const activeSession = this.chatManager.getActiveSession();
+
+    const selectedValue = sessionSwitcher.value;
+    sessionSwitcher.innerHTML = "";
+
+    sessions.forEach(session => {
+      const option = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
+      option.value = session.metadata.chatId;
+      option.textContent = session.metadata.chatTitle;
+      sessionSwitcher.appendChild(option);
+    });
+
+    if (activeSession) {
+      sessionSwitcher.value = activeSession.metadata.chatId;
+    } else if (sessions.find(s => s.metadata.chatId === selectedValue)) {
+      sessionSwitcher.value = selectedValue;
+    }
+  }
+
   _renderChatMessages(conversation: ChatSessionHistory) {
     this.chatMessages.innerHTML = "";
     for (const message of conversation.history) {

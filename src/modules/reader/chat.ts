@@ -43,6 +43,18 @@ export class ChatManager {
     this.chatSessionManager = chatSessionManager;
   }
 
+  getAllSessions(): ChatSessionHistory[] {
+    return this.chatSessionManager.getAllSessions();
+  }
+
+  getActiveSession(): ChatSessionHistory | null {
+    return this.chatSessionManager.getActiveSession();
+  }
+
+  switchSession(chatId: string): ChatSessionHistory | null {
+    return this.chatSessionManager.switchSession(chatId);
+  }
+
 
   /**
    * Synchronizes the PDF context with the Gemini File API.
