@@ -187,7 +187,6 @@ export class ConversationManager {
    */
   static addUserMessage(conversation: ChatSessionHistory, text: string): void {
     const userMessage: ChatMessage = {
-      sequence: (conversation.history.at(-1)?.sequence ?? -1) + 1,
       timestamp: new Date().toISOString(),
       role: "user",
       parts: [{ text: text }],
@@ -200,7 +199,6 @@ export class ConversationManager {
    */
   static addBotMessage(conversation: ChatSessionHistory, text: string, model: string, groundingMetadata?: any): void {
     const botMessage: ChatMessage = {
-      sequence: (conversation.history.at(-1)?.sequence ?? -1) + 1,
       timestamp: new Date().toISOString(),
       role: "model",
       model: model,

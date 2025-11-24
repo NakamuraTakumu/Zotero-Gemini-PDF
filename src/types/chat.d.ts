@@ -41,7 +41,6 @@ export interface ChatSessionHistory {
  * 会話内の個々のメッセージエントリ
  */
 export interface ChatMessage {
-  sequence: number;
   timestamp: string; // ISO 8601 format
   role: "user" | "model";
   model?: string; // modelロールの場合のみ
@@ -79,7 +78,6 @@ export interface ConversationFile {
  * 新しいChatMessageへの移行を考慮し、一時的に残す
  */
 export interface ConversationHistoryItem {
-  sequence: number;
   timestamp: string; // ISO 8601 format
   role: "user" | "model";
   model?: string; // Only for role: "model"

@@ -60,13 +60,11 @@ Each individual chat session (e.g., named `Gemini Chat - [chatTitle].json`) is s
   },
   "history": [
     {
-      "sequence": 0,
       "timestamp": "2025-11-18T11:01:05Z",
       "role": "user",
       "parts": [{ "text": "この論文と補足資料の内容を比較して要約してください。" }]
     },
     {
-      "sequence": 1,
       "timestamp": "2025-11-18T11:01:15Z",
       "role": "model",
       "model": "gemini-2.5-flash",
@@ -88,7 +86,6 @@ Each individual chat session (e.g., named `Gemini Chat - [chatTitle].json`) is s
 *   `history` (Array of Objects):
     *   **Description:** An ordered list of message entries, representing the turn-by-turn conversation for this chat session. All PDFs associated with the `zoteroParentItemKey` (as defined in the Parent Item File Metadata) are considered active context for this chat.
     *   **Object Structure:**
-        *   `sequence` (Number): A zero-based sequential number for each message.
         *   `timestamp` (String, ISO 8601 format): The timestamp of when the message was sent or received.
         *   `role` (String): The sender of the message (`"user"` or `"model"`).
         *   `model` (String, Optional): The name of the Gemini model that generated the response (only for `role: "model"`).
