@@ -135,6 +135,34 @@ export class UIManager {
     }
   }
 
+  initDeleteButton() {
+    const deleteButton = this.body.querySelector("#delete-session-button") as HTMLButtonElement;
+    if (!deleteButton) return;
+
+    deleteButton.onclick = async () => {
+      const activeSession = this.chatManager.getActiveSession();
+      if (!activeSession) {
+        Zotero.debug("[Gemini PDF] No active session to delete.");
+        return;
+      }
+
+      const confirmDelete = Zotero.getMainWindow().confirm(
+        `チャット「${activeSession.metadata.chatTitle}」を削除しますか？この操作は元に戻せません。`
+      );
+
+      if (confirmDelete) {
+        Zotero.debug(`[Gemini PDF] Deleting session: ${activeSession.metadata.chatTitle}`);
+        const success = await this.chatManager.deleteActiveSession();
+        if (success) {
+          // ドロップダウンの更新はdeleteActiveSession内のonActiveSessionChangeコールバックがトリガーする
+          // ここで直接updateSessionSwitcher()を呼ぶ必要はない
+        } else {
+          Zotero.logError(new Error("[Gemini PDF] Failed to delete session."));
+        }
+      }
+    };
+  }
+
   _renderChatMessages(conversation: ChatSessionHistory) {
     this.chatMessages.innerHTML = "";
     for (const message of conversation.history) {

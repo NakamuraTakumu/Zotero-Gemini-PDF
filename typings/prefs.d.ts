@@ -14,6 +14,7 @@ declare namespace _ZoteroTypes {
       "geminiModelList": string;
       "geminiSelectedModel": string;
       "geminiUseGoogleSearch": boolean;
+      "chatPanelHeight": number;
     };
   }
 }

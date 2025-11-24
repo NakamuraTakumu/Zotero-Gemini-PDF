@@ -1,9 +1,10 @@
 import { getLocaleID } from "../utils/locale";
 import { getPref, setPref } from "../utils/prefs";
 import {
-  PREF_MODEL_LIST,
   PREF_SELECTED_MODEL,
   PREF_USE_GOOGLE_SEARCH,
+  PREF_CONTEXT_WINDOW_SIZE,
+  PREF_CHAT_PANEL_HEIGHT,
 } from "../utils/constants";
 import { ChatSessionHistory, ParentItemFileMetadata, ChatPaneState } from "../types/chat";
 import { ConversationManager } from "./reader/conversation";
@@ -64,6 +65,7 @@ export class ReaderItemPaneFactory {
           <html:div class="chat-model-selector-area">
               <html:label for="chat-session-switcher">Session:</html:label>
               <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
+              <html:button id="delete-session-button" class="delete-session-button">🗑️</html:button>
               <html:label for="gemini-model-select" style="margin-left: 10px;">Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
               <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
@@ -258,6 +260,7 @@ export class ReaderItemPaneFactory {
         managers.uiManager.initModelSelector();
         managers.uiManager.initGoogleSearchCheckbox();
         managers.uiManager.initSessionSwitcher();
+        managers.uiManager.initDeleteButton();
 
         const doc = uiElements.doc;
         const chatMessages = uiElements.body.querySelector("#chat-messages") as HTMLDivElement;
@@ -309,6 +312,12 @@ export class ReaderItemPaneFactory {
         Zotero.log(`[Gemini PDF] Pane ${paneId} onRender: Stored itemId is ${paneState.zoteroContext.itemId}`);
         paneState.zoteroContext.actualParentItem = actualParentItem;
 
+        const savedHeight = getPref(PREF_CHAT_PANEL_HEIGHT) as number;
+        if (savedHeight) {
+          chatMessages.style.height = `${savedHeight}px`;
+          chatMessages.style.maxHeight = 'none';
+        }
+
         chatResizer.addEventListener("mousedown", (e: MouseEvent) => {
           e.preventDefault();
           const startY = e.clientY;
@@ -328,6 +337,7 @@ export class ReaderItemPaneFactory {
           const stopDrag = () => {
             doc.removeEventListener("mousemove", doDrag, false);
             doc.removeEventListener("mouseup", stopDrag, false);
+            setPref(PREF_CHAT_PANEL_HEIGHT, chatMessages.clientHeight);
           };
           doc.addEventListener("mousemove", doDrag, false);
           doc.addEventListener("mouseup", stopDrag, false);

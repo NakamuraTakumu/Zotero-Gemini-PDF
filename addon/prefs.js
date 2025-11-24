@@ -5,3 +5,4 @@ pref("__prefsPrefix__.promptForSelection", "あなたは正確性を重視する
 pref("__prefsPrefix__.geminiModelList", "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview");
 pref("__prefsPrefix__.geminiSelectedModel", "gemini-2.5-flash-lite");
 pref("__prefsPrefix__.geminiUseGoogleSearch", false);
+pref("__prefsPrefix__.chatPanelHeight", 300);

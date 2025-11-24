@@ -130,5 +130,38 @@ export class ChatSessionManager {
     }
   }
 
-  // TODO: switchSession, deleteSession, updateSessionTitle などのメソッドを追加
+  /**
+   * 現在のアクティブなチャットセッションを削除します。
+   */
+  async deleteActiveSession(): Promise<boolean> {
+    if (!this._activeSession) {
+      Zotero.logError(new Error("[ChatSessionManager] No active session to delete."));
+      return false;
+    }
+
+    const chatIdToDelete = this._activeSession.metadata.chatId;
+
+    try {
+      await ConversationManager.deleteConversation(this.parentItem, chatIdToDelete);
+      this._sessions = this._sessions.filter(session => session.metadata.chatId !== chatIdToDelete);
+      Zotero.debug(`[ChatSessionManager] Deleted session with ID: ${chatIdToDelete}`);
+
+      // アクティブセッションを再設定
+      if (this._sessions.length > 0) {
+        this._activeSession = this._sessions[0]; // 最初のセッションをアクティブにする
+      } else {
+        // 全てのセッションが削除された場合、新しいデフォルトセッションを作成
+        await this.init(); // init() が新しいデフォルトセッションを作成し、アクティブにする
+      }
+      
+      if (this._activeSession) {
+        this.onActiveSessionChange(this._activeSession); // UIを更新
+      }
+      return true;
+
+    } catch (e: any) {
+      Zotero.logError(new Error(`[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${e.message || String(e)}`));
+      return false;
+    }
+  }
 }

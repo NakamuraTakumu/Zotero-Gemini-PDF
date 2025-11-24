@@ -1,6 +1,6 @@
 import { ReaderItemPaneFactory } from "../readerItemPane"; // ReaderItemPaneFactory をインポート
 import { getPref } from "../../utils/prefs";
-import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
+import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_CONTEXT_WINDOW_SIZE } from "../../utils/constants";
 import { ChatSessionHistory, ChatMessage, ParentItemFileMetadata, ParentItemFileMetadataFile } from "../../types/chat"; // ParentItemFileMetadata, ParentItemFileMetadataFile をインポート
 import { Content, Part } from "@google/genai";
 import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
@@ -53,6 +53,10 @@ export class ChatManager {
 
   switchSession(chatId: string): ChatSessionHistory | null {
     return this.chatSessionManager.switchSession(chatId);
+  }
+
+  async deleteActiveSession(): Promise<boolean> {
+    return this.chatSessionManager.deleteActiveSession();
   }
 
 
@@ -227,14 +231,19 @@ export class ChatManager {
     const botMessageDiv = ui.addBotMessage("Typing...", "bot-message");
 
     try {
-      const historyForApi: Content[] = currentConversation.history.map(
+      const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
+
+      const fullHistory: Content[] = currentConversation.history.map(
         (msg) => ({
           role: msg.role,
           parts: msg.parts,
-        })
+        }),
       );
 
-      historyForApi.pop();
+      // The last message is the user's current one; exclude it from history and truncate.
+      const historyForApi = fullHistory.length > 1 ? fullHistory.slice(0, -1) : [];
+      const truncatedHistory =
+        historyLimit > 0 ? historyForApi.slice(-historyLimit) : historyForApi;
 
       const userParts: Part[] = [{ text: textForApi }];
       // ParentItemFileMetadata からファイルのURIを取得して userParts に追加
@@ -255,7 +264,7 @@ export class ChatManager {
           { urlContext: {} }
         ];
       }
-      const { responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(historyForApi, userParts, tools);
+      const { responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(truncatedHistory, userParts, tools);
 
       let messageHtml = this.renderMarkdown(botResponseText || "No response.");
 
