@@ -2,6 +2,8 @@
 
 // gemini-pdf/src/types/chat.d.ts
 
+import { ChatSessionManager } from "../modules/reader/chatSessionManager"; // ChatSessionManager をインポート
+
 /**
  * Zotero親アイテムに添付されたGemini File API関連のPDF添付ファイルすべての情報を管理するJSONのインターフェース
  */
@@ -73,6 +75,9 @@ export interface ChatPaneState {
     chatManager: ChatManager;
     uiManager: UIManager;
   };
+
+  // ChatSessionManager インスタンス
+  chatSessionManager?: ChatSessionManager;
 
   // Zoteroアイテムに関するコンテキスト情報
   zoteroContext: {

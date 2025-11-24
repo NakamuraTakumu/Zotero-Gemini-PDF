@@ -136,6 +136,39 @@ export class ConversationManager {
   }
 
   /**
+   * Loads all conversation attachments associated with the parent item.
+   * If no conversation exists, it returns an empty array.
+   */
+  static async getAllConversations(parentItem: Zotero.Item): Promise<ChatSessionHistory[]> {
+    const childAttachments = await Zotero.Items.get(parentItem.getAttachments());
+    const conversations: ChatSessionHistory[] = [];
+
+    for (const attachment of childAttachments) {
+      if (
+        (attachment.itemType as string) === "attachment" &&
+        attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
+        attachment.attachmentLinkMode ===
+          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
+      ) {
+        const conversationFilePath = attachment.getFilePath();
+        if (conversationFilePath) {
+          try {
+            const content = await Zotero.File.getContentsAsync(conversationFilePath);
+            if (typeof content === "string" && content.trim() !== "") {
+              const parsedConversation = JSON.parse(content) as ChatSessionHistory;
+              conversations.push(parsedConversation);
+            }
+          } catch (e: any) {
+            Zotero.logError(new Error(`[ConversationManager] Failed to parse conversation JSON from attachment ${attachment.key}: ${e.message || String(e)}`));
+            // Continue to next attachment if parsing fails
+          }
+        }
+      }
+    }
+    return conversations;
+  }
+
+  /**
    * Saves the current conversation back to its Zotero attachment.
    */
   static async saveConversation(

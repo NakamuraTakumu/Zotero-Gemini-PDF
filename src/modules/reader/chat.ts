@@ -8,14 +8,15 @@ import { ConversationManager } from "./conversation";
 import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
 import markdownItKatex from "@vscode/markdown-it-katex";
+import { ChatSessionManager } from "./chatSessionManager"; // ChatSessionManager をインポート
 
 // Helper for rendering markdown
 const initMarkdownRenderer = (window: Window) => {
   const DOMPurify = createDOMPurify(window as any); // Cast window to any
 
   // Handle CJS/ESM interop issue with the imported module
-  const katexPlugin = typeof markdownItKatex === 'function' 
-    ? markdownItKatex 
+  const katexPlugin = typeof markdownItKatex === 'function'
+    ? markdownItKatex
     : (markdownItKatex as any).default;
 
   const md = new MarkdownIt({ xhtmlOut: true }).use(katexPlugin, {
@@ -34,11 +35,14 @@ const initMarkdownRenderer = (window: Window) => {
 };
 
 export class ChatManager {
-  public renderMarkdown: (text: string) => string; // Changed to public
+  public renderMarkdown: (text: string) => string;
+  private chatSessionManager: ChatSessionManager;
 
-  constructor(window: Window) {
+  constructor(window: Window, chatSessionManager: ChatSessionManager) {
     this.renderMarkdown = initMarkdownRenderer(window);
+    this.chatSessionManager = chatSessionManager;
   }
+
 
   /**
    * Synchronizes the PDF context with the Gemini File API.
@@ -147,7 +151,6 @@ export class ChatManager {
     textForHistory: string,
     textForApi: string,
     actualParentItem: Zotero.Item,
-    currentConversation: ChatSessionHistory,
     parentItemFileMetadata: ParentItemFileMetadata, // ParentItemFileMetadata を引数に追加
     ui: {
       uiManager: import("./ui").UIManager; // Add UIManager to the UI context
@@ -160,7 +163,18 @@ export class ChatManager {
       originalButtonText?: string;
     }
   ) {
-    if (!actualParentItem || !currentConversation || !parentItemFileMetadata) {
+    if (!actualParentItem || !parentItemFileMetadata) {
+      Zotero.logError(new Error("Cannot process and send message: missing actualParentItem or parentItemFileMetadata."));
+      return;
+    }
+    if (!this.chatSessionManager) {
+      Zotero.logError(new Error("ChatSessionManager is not initialized in ChatManager."));
+      return;
+    }
+
+    const currentConversation = this.chatSessionManager.getActiveSession(); // Get active session from manager
+    if (!currentConversation) {
+      Zotero.logError(new Error("No active conversation found in ChatSessionManager."));
       return;
     }
 
@@ -175,7 +189,6 @@ export class ChatManager {
     if (textForApi === textForHistory) {
       ui.chatInput.value = "";
     }
-
     // PDF同期はprocessAndSendMessageの外部で行われるため、ここからは削除
     // ParentItemFileMetadataは既に引数として渡されている
     // try {

@@ -5,7 +5,7 @@ import {
   PREF_SELECTED_MODEL,
   PREF_USE_GOOGLE_SEARCH,
 } from "../utils/constants";
-import { ChatSessionHistory, ParentItemFileMetadata, ChatPaneState } from "../types/chat";
+import { ChatSessionHistory, ParentItemFileMetadata } from "../types/chat";
 import { ConversationManager } from "./reader/conversation";
 import { ChatManager } from "./reader/chat";
 import { UIManager } from "./reader/ui";
@@ -86,10 +86,9 @@ export class ReaderItemPaneFactory {
         const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
         if (!chatMessages) return;
 
-        // ChatManager and UIManager will be initialized in onRender
-        // const chatManager = new ChatManager(window, undefined); // chatSessionManager is optional now
-        // const uiManager = new UIManager(doc, body, chatMessages, chatManager); // Pass chatManager to UIManager
-        // uiManager.registerPrefObservers();
+        const chatManager = new ChatManager(window, undefined); // chatSessionManager is optional now
+        const uiManager = new UIManager(doc, body, chatMessages, chatManager); // Pass chatManager to UIManager
+        uiManager.registerPrefObservers();
 
         const handleGeminiAction = (event: Event) => {
           const customEvent = event as CustomEvent;
@@ -106,20 +105,7 @@ export class ReaderItemPaneFactory {
           Zotero.log(`[Gemini PDF] Action event received for matching item ${state.zoteroContext.itemId}`);
           (async () => {
             const { fullPrompt, summaryText, popupTriggerButton, originalButtonText } = customEvent.detail;
-            const { managers, zoteroContext, chatData, runtimeState, chatSessionManager } = state; // chatSessionManager を取得
-
-            if (!chatSessionManager || !managers.chatManager || !managers.uiManager) { // managers.chatManager, managers.uiManager もチェック
-              Zotero.logError(new Error("ChatSessionManager or ChatManager/UIManager is not initialized in paneState for handleGeminiAction."));
-              return;
-            }
-
-            const currentConversation = chatSessionManager.getActiveSession(); // Get active session from manager
-            if (!currentConversation) {
-              Zotero.logError(new Error("No active conversation found in ChatSessionManager for handleGeminiAction."));
-              runtimeState.isGeminiRequestInProgress = false;
-              ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, false);
-              return;
-            }
+            const { managers, zoteroContext, chatData, runtimeState } = state; // parentItemFileMetadata を削除
 
             const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
             const sendButton = body.querySelector("#send-button") as HTMLButtonElement;
@@ -134,44 +120,16 @@ export class ReaderItemPaneFactory {
               return;
             }
 
-            // processAndSendMessage の呼び出し前に actualParentItem が null でないことを確認
-            if (!zoteroContext.actualParentItem) {
-              Zotero.logError(new Error("Cannot process and send message: actualParentItem is null."));
-              runtimeState.isGeminiRequestInProgress = false;
-              ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, false);
-              return;
-            }
-
-            // parentItemFileMetadata がロードまたは作成されたことを確認してから processAndSendMessage を呼び出す
-            if (chatData.parentItemFileMetadata) {
-              await managers.chatManager.processAndSendMessage(
-                paneId, // Pass paneId
-                summaryText,
-                fullPrompt,
-                zoteroContext.actualParentItem,
-                chatData.parentItemFileMetadata, // parentItemFileMetadata を渡す
-                {
-                  uiManager: managers.uiManager, // Pass uiManager reference
-                  addBotMessage: managers.uiManager.addBotMessage,
-                  updateBotMessage: managers.uiManager.updateBotMessage,
-                  chatInput,
-                  sendButton,
-                  chatMessages,
-                  popupTriggerButton, // Pass the button reference
-                  originalButtonText, // Pass original text
-                }
-              );
-            }
-          })();
-        };
-        Zotero.getMainWindow().document.addEventListener('gemini-pdf-action', handleGeminiAction);
         addon.data.chatPanes[paneId] = {
           paneId,
           uiElements: {
             doc,
             body,
           },
-          managers: undefined as any, // Will be initialized in onRender
+          managers: {
+            chatManager,
+            uiManager,
+          },
           zoteroContext: {
             itemId: undefined,
             actualParentItem: null,
@@ -213,42 +171,13 @@ export class ReaderItemPaneFactory {
           return;
         }
 
-        const paneState = addon.data.chatPanes[paneId]; // paneState を一番上に移動
+        const paneState = addon.data.chatPanes[paneId];
+        const { managers, uiElements, zoteroContext, chatData } = paneState;
 
-        const actualParentItem: Zotero.Item | null = (item.isAttachment() && item.parentID)
-          ? await Zotero.Items.getAsync(item.parentID)
-          : item;
-
-        if (!paneState.managers) { // Check if managers is initialized
-            if (!actualParentItem) {
-                Zotero.logError(new Error("Cannot initialize managers, no parent item found."));
-                return;
-            }
-            const { doc, body } = paneState.uiElements;
-            const window = doc.defaultView as any;
-            const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
-
-            const chatSessionManager = new ChatSessionManager(actualParentItem);
-            await chatSessionManager.init();
-
-            const chatManager = new ChatManager(window, chatSessionManager);
-            const uiManager = new UIManager(doc, body, chatMessages, chatManager);
-            uiManager.registerPrefObservers();
-
-            paneState.managers = { chatManager, uiManager };
-            (paneState as any).chatSessionManager = chatSessionManager;
-        }
-
-        const { managers, uiElements, zoteroContext, chatData, chatSessionManager } = paneState as any;
-
-        if (!managers) {
-          Zotero.logError(new Error("Managers not initialized in paneState."));
+        if (!managers.chatManager || !managers.uiManager) {
+          Zotero.logError(new Error("ChatManager or UIManager not found for pane."));
           return;
         }
-
-        // Initialize UI elements using UIManager methods
-        managers.uiManager.initModelSelector();
-        managers.uiManager.initGoogleSearchCheckbox();
 
         const doc = uiElements.doc;
         const chatMessages = uiElements.body.querySelector("#chat-messages") as HTMLDivElement;
@@ -258,6 +187,9 @@ export class ReaderItemPaneFactory {
         const newChatButton = uiElements.body.querySelector("#new-chat-button") as HTMLButtonElement; // Get reference to new button
 
         if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer || !newChatButton) return; // Add newChatButton to null check
+
+        managers.uiManager.initModelSelector();
+        managers.uiManager.initGoogleSearchCheckbox();
 
         chatMessages.addEventListener("click", (e: Event) => {
           const target = e.target as HTMLElement;
@@ -272,33 +204,40 @@ export class ReaderItemPaneFactory {
           }
         });
 
-        const currentConversation = chatSessionManager.getActiveSession();
-
-        if (actualParentItem) {
-          try {
-            // Assign to paneState immediately after loading to ensure it's the source of truth
-            paneState.chatData.currentConversation = currentConversation; 
-            if (currentConversation) {
-              managers.uiManager._renderChatMessages(paneState.chatData.currentConversation); 
-            } else {
-               Zotero.logError(new Error("No active conversation found after init."));
-               managers.uiManager.addBotMessage('チャットの読み込みに失敗しました。', 'error-message');
-            }
-            // ParentItemFileMetadata のロードと同期は初回メッセージ送信時に行うため、ここでは行わない
-          } catch (e: any) {
-            Zotero.logError(new Error(`Error loading conversation or syncing PDFs: ${e.message || String(e)}`));
-            managers.uiManager.addBotMessage(`Error loading conversation or syncing PDFs: ${e.message || String(e)}`, 'error-message');
-          }
-        }
+        const actualParentItem: Zotero.Item | null = (item.isAttachment() && item.parentID)
+          ? await Zotero.Items.getAsync(item.parentID)
+          : item;
 
         // Update the state with the latest context
         if (actualParentItem) {
-          paneState.zoteroContext.itemId = actualParentItem.id;
+          zoteroContext.itemId = actualParentItem.id;
         } else {
-          paneState.zoteroContext.itemId = undefined; // Or handle appropriately if no parent item
+          zoteroContext.itemId = undefined; // Or handle appropriately if no parent item
         }
-        Zotero.log(`[Gemini PDF] Pane ${paneId} onRender: Stored itemId is ${paneState.zoteroContext.itemId}`);
-        paneState.zoteroContext.actualParentItem = actualParentItem;
+        Zotero.log(`[Gemini PDF] Pane ${paneId} onRender: Stored itemId is ${zoteroContext.itemId}`);
+        zoteroContext.actualParentItem = actualParentItem;
+
+        // Initialize ChatSessionManager
+        if (actualParentItem) {
+          const chatSessionManager = new ChatSessionManager(actualParentItem);
+          await chatSessionManager.init();
+          paneState.chatSessionManager = chatSessionManager;
+          const window = uiElements.doc.defaultView as any; // Define window here
+          // Update chatManager with the actual ChatSessionManager instance
+          paneState.managers.chatManager.setChatSessionManager(chatSessionManager);
+        } else {
+          Zotero.logError(new Error("Cannot initialize ChatSessionManager: actualParentItem is null."));
+          return;
+        }
+        
+        // Render the active session
+        const activeSession = paneState.chatSessionManager.getActiveSession();
+        if (activeSession) {
+          managers.uiManager._renderChatMessages(activeSession);
+        } else {
+          managers.uiManager._renderChatMessages({ metadata: { zoteroParentItemKey: actualParentItem?.key || "", chatId: "", chatTitle: "" }, history: [] });
+        }
+
 
         chatResizer.addEventListener("mousedown", (e: MouseEvent) => {
           e.preventDefault();
@@ -334,36 +273,34 @@ export class ReaderItemPaneFactory {
             return;
           }
 
-                      if (zoteroContext.actualParentItem && chatData.currentConversation) {
-                      paneState.runtimeState.isGeminiRequestInProgress = true; // Set state to true for this pane
-                      ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, true); // Dispatch event
-          
-                      // parentItemFileMetadata がまだロードされていない場合、ここでロード/作成する
-                      if (!chatData.parentItemFileMetadata) {
-                        try {
-                          chatData.parentItemFileMetadata = await managers.chatManager.synchronizePdfContext(zoteroContext.actualParentItem, { addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage });
-                        } catch (e: any) {
-                          Zotero.logError(new Error(`Error synchronizing PDFs on first message: ${e.message || String(e)}`));
-                          managers.uiManager.addBotMessage(`Error synchronizing PDFs: ${e.message || String(e)}`, 'error-message');
-                          paneState.runtimeState.isGeminiRequestInProgress = false; // Reset state on error
-                          ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, false); // Dispatch event on error
-                          return;
-                        }
-                      }
-            // parentItemFileMetadata がロードまたは作成されたことを確認してから processAndSendMessage を呼び出す
-            // ensureParentItemFileMetadata が成功していれば chatData.parentItemFileMetadata は non-null
-            if (chatData.parentItemFileMetadata) {
-              await managers.chatManager.processAndSendMessage(
-                paneId, // Pass paneId
-                messageText, messageText, zoteroContext.actualParentItem,
-                chatData.parentItemFileMetadata, // parentItemFileMetadata を渡す
-                { uiManager: managers.uiManager, addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
-              );
-            } else {
-              Zotero.logError(new Error("parentItemFileMetadata is unexpectedly null after ensureParentItemFileMetadata."));
-            }
+          const currentConversation = paneState.chatSessionManager?.getActiveSession(); // Get active session from manager
+          if (!zoteroContext.actualParentItem || !currentConversation || !paneState.chatSessionManager) {
+            Zotero.logError(new Error("Cannot send message: missing actualParentItem, currentConversation, or chatSessionManager."));
+            return;
           }
-        };
+
+          paneState.runtimeState.isGeminiRequestInProgress = true; // Set state to true for this pane
+          ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, true); // Dispatch event
+
+          // Ensure parentItemFileMetadata is available
+          if (!await ReaderItemPaneFactory.ensureParentItemFileMetadata(paneState)) {
+            // Error occurred during ensureParentItemFileMetadata, state already reset
+            return;
+          }
+
+                      // parentItemFileMetadata がロードまたは作成されたことを確認してから processAndSendMessage を呼び出す
+                      // ensureParentItemFileMetadata が成功していれば chatData.parentItemFileMetadata は non-null
+                      if (chatData.parentItemFileMetadata) {
+                        await managers.chatManager.processAndSendMessage(
+                          paneId, // Pass paneId
+                          messageText, messageText, zoteroContext.actualParentItem,
+                          chatData.parentItemFileMetadata, // parentItemFileMetadata を渡す
+                          { uiManager: managers.uiManager, addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
+                        );
+                      } else {
+                        Zotero.logError(new Error("parentItemFileMetadata is unexpectedly null after ensureParentItemFileMetadata."));
+                      }
+                  };
         sendButton.addEventListener("click", handleSendMessage);
         chatInput.addEventListener("keydown", (event: KeyboardEvent) => {
           if (event.key === "Enter" && !event.shiftKey) {
