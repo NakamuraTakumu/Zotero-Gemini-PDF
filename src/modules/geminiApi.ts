@@ -154,8 +154,9 @@ export async function sendMessageToGemini(
   history: Content[],
   userParts: Part[],
   tools?: any[],
+  modelName?: string,
 ): Promise<{ responseText: string | null; groundingMetadata?: any }> {
-  const selectedModel = getPref(PREF_SELECTED_MODEL) as string;
+  const selectedModel = modelName || (getPref(PREF_SELECTED_MODEL) as string);
   Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
   const client = getGeminiClient();
   if (!client) {

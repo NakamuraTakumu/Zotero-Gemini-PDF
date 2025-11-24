@@ -62,19 +62,23 @@ export class ReaderItemPaneFactory {
       bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
           <html:div class="chat-messages" id="chat-messages"></html:div>
           <html:div class="chat-resizer" id="chat-resizer"></html:div>
-          <html:div class="chat-model-selector-area">
+          <html:div class="chat-session-area" style="display: flex; align-items: center; gap: 5px; padding-bottom: 5px;">
               <html:label for="chat-session-switcher">Session:</html:label>
-              <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
+              <html:select id="chat-session-switcher" class="chat-session-switcher" style="flex-grow: 1;"></html:select>
               <html:button id="delete-session-button" class="delete-session-button">🗑️</html:button>
-              <html:label for="gemini-model-select" style="margin-left: 10px;">Model:</html:label>
+          </html:div>
+          <html:div class="chat-model-selector-area">
+              <html:label for="gemini-model-select">Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
               <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
               <html:input type="checkbox" id="use-google-search-checkbox" />
           </html:div>
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
-              <html:button id="send-button" class="send-button">Send</html:button>
-              <html:button id="new-chat-button" class="new-chat-button">新しいチャット</html:button>
+              <html:div style="display: flex; flex-direction: column; gap: 5px;">
+                  <html:button id="send-button" class="send-button">Send</html:button>
+                  <html:button id="new-chat-button" class="new-chat-button">新しいチャット</html:button>
+              </html:div>
           </html:div>
       </html:div>`,
       onInit: ({ body, refresh }) => {
@@ -232,21 +236,32 @@ export class ReaderItemPaneFactory {
             const window = doc.defaultView as any;
             const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
 
-            const chatSessionManager = new ChatSessionManager(actualParentItem, (session) => {
-                // onActiveSessionChange callback
-                if (paneState.managers) {
-                    paneState.managers.uiManager._renderChatMessages(session);
-                    paneState.chatData.currentConversation = session;
-                }
-            });
-            await chatSessionManager.init();
+            let chatManager: ChatManager;
 
-            const chatManager = new ChatManager(window, chatSessionManager);
+            const chatSessionManager = new ChatSessionManager(
+                actualParentItem, 
+                (session) => { // onActiveSessionChange
+                    if (paneState.managers) {
+                        paneState.managers.uiManager._renderChatMessages(session);
+                        paneState.chatData.currentConversation = session;
+                        paneState.managers.uiManager.updateSessionSwitcher();
+                    }
+                },
+                (session) => { // onGenerateTitle
+                    if (chatManager) {
+                        chatManager.generateAndSetSessionTitle(session);
+                    }
+                }
+            );
+
+            chatManager = new ChatManager(window, chatSessionManager);
             const uiManager = new UIManager(doc, body, chatMessages, chatManager);
             uiManager.registerPrefObservers();
 
             paneState.managers = { chatManager, uiManager };
             (paneState as any).chatSessionManager = chatSessionManager;
+            
+            await chatSessionManager.init();
         }
 
         const { managers, uiElements, zoteroContext, chatData, chatSessionManager } = paneState as any;

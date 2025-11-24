@@ -130,6 +130,7 @@ export class ConversationManager {
         zoteroParentItemKey: parentItem.key,
         chatId: chatId,
         chatTitle: chatTitle,
+        isTitleGenerated: false,
       },
       history: [],
     };

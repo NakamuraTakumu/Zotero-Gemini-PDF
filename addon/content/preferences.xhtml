@@ -23,6 +23,15 @@
                 <label control="__addonRef__-gemini-model-list" data-l10n-id="gemini-pdf-model-list-label">Available Models (comma-separated):</label>
                 <html:textarea id="__addonRef__-gemini-model-list" preference="__prefsPrefix__.geminiModelList" flex="1" rows="2"/>
             </hbox>
+            <separator class="hr"/>
+            <hbox align="center">
+                <label control="__addonRef__-title-generation-model" data-l10n-id="gemini-pdf-title-generation-model-label">Title Generation Model:</label>
+                <html:input type="text" id="__addonRef__-title-generation-model" preference="__prefsPrefix__.titleGenerationModel" flex="1"/>
+            </hbox>
+            <hbox align="center">
+                <label control="__addonRef__-title-generation-prompt" data-l10n-id="gemini-pdf-title-generation-prompt-label">Title Generation Prompt:</label>
+                <html:textarea id="__addonRef__-title-generation-prompt" preference="__prefsPrefix__.titleGenerationPrompt" flex="1" rows="4"/>
+            </hbox>
             <hbox align="center">
                 <label control="__addonRef__-gemini-chat-history-limit" data-l10n-id="gemini-pdf-context-window-size-label">Chat History Limit (messages):</label>
                 <html:input type="number" id="__addonRef__-gemini-chat-history-limit" preference="__prefsPrefix__.contextWindowSize" flex="1" min="0" value="20"/>

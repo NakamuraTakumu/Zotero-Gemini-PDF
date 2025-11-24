@@ -29,6 +29,7 @@ export interface ChatSessionHistoryMetadata {
   zoteroParentItemKey: string;
   chatId: string;
   chatTitle: string;
+  isTitleGenerated: boolean;
 }
 
 /**

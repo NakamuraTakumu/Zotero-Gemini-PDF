@@ -82,6 +82,11 @@
   background-color: var(--chat-input-bg);
   color: var(--chat-text-color);
 }
+*|select.chat-session-switcher {
+  max-width: 200px; /* 最大幅を設定 */
+  flex-shrink: 1; /* 親要素のスペースが足りない場合に縮小を許可 */
+  flex-grow: 0;
+}
 *|div.chat-input-area {
   display: flex;
   border-top: 1px solid var(--chat-border-color);

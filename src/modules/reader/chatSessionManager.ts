@@ -9,10 +9,16 @@ export class ChatSessionManager {
   private _sessions: ChatSessionHistory[] = [];
   private _activeSession: ChatSessionHistory | null = null;
   private onActiveSessionChange: (session: ChatSessionHistory) => void;
+  private onGenerateTitle: (session: ChatSessionHistory) => void;
 
-  constructor(parentItem: Zotero.Item, onActiveSessionChange: (session: ChatSessionHistory) => void) {
+  constructor(
+    parentItem: Zotero.Item, 
+    onActiveSessionChange: (session: ChatSessionHistory) => void,
+    onGenerateTitle: (session: ChatSessionHistory) => void,
+  ) {
     this.parentItem = parentItem;
     this.onActiveSessionChange = onActiveSessionChange;
+    this.onGenerateTitle = onGenerateTitle;
   }
 
   /**
@@ -24,6 +30,14 @@ export class ChatSessionManager {
     try {
       allConversations = await ConversationManager.getAllConversations(this.parentItem);
       this._sessions = allConversations;
+      
+      // Check if any loaded sessions need a title
+      this._sessions.forEach(session => {
+        if (!session.metadata.isTitleGenerated && session.history.length >= 2) {
+          this.onGenerateTitle(session);
+        }
+      });
+
     } catch (e: any) {
       Zotero.logError(new Error(`Error loading all conversations: ${e.message || String(e)}`));
       this._sessions = []; // エラー時も空のリストで続行
@@ -38,6 +52,7 @@ export class ChatSessionManager {
           zoteroParentItemKey: this.parentItem.key,
           chatId: newChatId,
           chatTitle: newChatTitle,
+          isTitleGenerated: false,
         },
         history: [],
       };
@@ -109,6 +124,7 @@ export class ChatSessionManager {
         zoteroParentItemKey: this.parentItem.key,
         chatId: newChatId,
         chatTitle: title,
+        isTitleGenerated: false,
       },
       history: [],
     };
@@ -151,7 +167,20 @@ export class ChatSessionManager {
         this._activeSession = this._sessions[0]; // 最初のセッションをアクティブにする
       } else {
         // 全てのセッションが削除された場合、新しいデフォルトセッションを作成
-        await this.init(); // init() が新しいデフォルトセッションを作成し、アクティブにする
+        const newChatId = Zotero.Utilities.randomString(10);
+        const newChatTitle = "新しいチャット 1";
+        const newConversation: ChatSessionHistory = {
+            metadata: {
+                zoteroParentItemKey: this.parentItem.key,
+                chatId: newChatId,
+                chatTitle: newChatTitle,
+                isTitleGenerated: false,
+            },
+            history: [],
+        };
+        this._sessions.push(newConversation);
+        this._activeSession = newConversation;
+        await ConversationManager.saveConversation(this.parentItem, newConversation);
       }
       
       if (this._activeSession) {
@@ -162,6 +191,17 @@ export class ChatSessionManager {
     } catch (e: any) {
       Zotero.logError(new Error(`[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${e.message || String(e)}`));
       return false;
+    }
+  }
+
+  async updateSessionTitleAndFlag(chatId: string, newTitle: string): Promise<void> {
+    const session = this.getSessionById(chatId);
+    if (session) {
+      session.metadata.chatTitle = newTitle;
+      session.metadata.isTitleGenerated = true;
+      await this.saveActiveSession(); // Assuming the session to update is the active one.
+      // If not, this might need to save a non-active session. For now, this is okay.
+      this.onActiveSessionChange(session); // Notify UI to update the switcher
     }
   }
 }

@@ -15,3 +15,5 @@ export const PREF_SYSTEM_PROMPT = "geminiSystemPrompt";
 export const PREF_PROMPT_FOR_SELECTION = "promptForSelection";
 export const PREF_CONTEXT_WINDOW_SIZE = "contextWindowSize";
 export const PREF_CHAT_PANEL_HEIGHT = "chatPanelHeight";
+export const PREF_TITLE_GENERATION_MODEL = "titleGenerationModel";
+export const PREF_TITLE_GENERATION_PROMPT = "titleGenerationPrompt";

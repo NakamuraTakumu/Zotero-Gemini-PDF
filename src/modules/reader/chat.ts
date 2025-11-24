@@ -1,6 +1,12 @@
 import { ReaderItemPaneFactory } from "../readerItemPane"; // ReaderItemPaneFactory をインポート
 import { getPref } from "../../utils/prefs";
-import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_CONTEXT_WINDOW_SIZE } from "../../utils/constants";
+import {
+  PREF_SELECTED_MODEL,
+  PREF_USE_GOOGLE_SEARCH,
+  PREF_CONTEXT_WINDOW_SIZE,
+  PREF_TITLE_GENERATION_MODEL,
+  PREF_TITLE_GENERATION_PROMPT,
+} from "../../utils/constants";
 import { ChatSessionHistory, ChatMessage, ParentItemFileMetadata, ParentItemFileMetadataFile } from "../../types/chat"; // ParentItemFileMetadata, ParentItemFileMetadataFile をインポート
 import { Content, Part } from "@google/genai";
 import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
@@ -57,6 +63,36 @@ export class ChatManager {
 
   async deleteActiveSession(): Promise<boolean> {
     return this.chatSessionManager.deleteActiveSession();
+  }
+
+  async updateSessionTitleAndFlag(chatId: string, newTitle: string): Promise<void> {
+    return this.chatSessionManager.updateSessionTitleAndFlag(chatId, newTitle);
+  }
+
+  async generateAndSetSessionTitle(session: ChatSessionHistory): Promise<void> {
+    if (!session || session.history.length < 2 || session.metadata.isTitleGenerated) {
+        return;
+    }
+
+    const userPrompt = session.history[0].parts[0].text;
+    const modelResponse = session.history[1].parts[0].text;
+
+    const promptTemplate = getPref(PREF_TITLE_GENERATION_PROMPT) as string;
+    const titlePrompt = promptTemplate
+      .replace('{userPrompt}', userPrompt)
+      .replace('{modelResponse}', modelResponse);
+    
+    const modelForTitle = getPref(PREF_TITLE_GENERATION_MODEL) as string;
+
+    try {
+      const { responseText } = await sendMessageToGemini([], [{ text: titlePrompt }], undefined, modelForTitle);
+      if (responseText) {
+        const newTitle = responseText.trim().replace(/^「|」$/g, '').replace(/\.$/, '');
+        await this.updateSessionTitleAndFlag(session.metadata.chatId, newTitle);
+      }
+    } catch (e: any) {
+      Zotero.logError(new Error(`[ChatManager] Failed to generate session title: ${e.message || String(e)}`));
+    }
   }
 
 
@@ -293,6 +329,11 @@ export class ChatManager {
       ConversationManager.addBotMessage(currentConversation, botResponseText || "", getPref(PREF_SELECTED_MODEL) as string, groundingMetadata);
       Zotero.debug(`[ChatManager] After addBotMessage, history length: ${currentConversation.history.length}`);
       await ConversationManager.saveConversation(actualParentItem, currentConversation);
+
+      // After the first exchange, generate a title for the session
+      if (currentConversation.history.length === 2 && !currentConversation.metadata.isTitleGenerated) {
+        this.generateAndSetSessionTitle(currentConversation);
+      }
 
     } catch (error: any) {
       const errorMessage = error.message || String(error);
