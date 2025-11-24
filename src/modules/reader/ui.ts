@@ -1,6 +1,6 @@
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
-import { Conversation } from "../../types/chat"; // Import Conversation type
+import { ChatSessionHistory } from "../../types/chat"; // Import ChatSessionHistory type
 import { ChatManager } from "./chat"; // Import ChatManager type
 
 export class UIManager {
@@ -97,7 +97,7 @@ export class UIManager {
     });
   }
 
-  _renderChatMessages(conversation: Conversation) {
+  _renderChatMessages(conversation: ChatSessionHistory) {
     this.chatMessages.innerHTML = "";
     for (const message of conversation.history) {
       const messageDiv = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;

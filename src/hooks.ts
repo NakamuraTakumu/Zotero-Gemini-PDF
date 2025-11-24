@@ -3,8 +3,9 @@ import { registerPrefsScripts } from "./modules/preferenceScript"; // Import the
 import { initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
 import { buildReaderPopup } from "./modules/readerPopup";
-import { CONVERSATION_ATTACHMENT_TITLE } from "./utils/constants"; // Import CONVERSATION_ATTACHMENT_TITLE
+import { GEMINI_CHAT_TITLE_PREFIX } from "./utils/constants"; // Import GEMINI_CHAT_TITLE_PREFIX
 import { ConversationManager } from "./modules/reader/conversation"; // Import ConversationManager
+import { ChatSessionHistory } from "./types/chat"; // Import ChatSessionHistory
 
 const observerID = "geminiPDFPluginObserver"; // Define a unique ID for the observer
 
@@ -104,7 +105,7 @@ async function notify(event: string, type: string, ids: (string | number)[], ext
       }
 
       // Check if the item is our chat history attachment
-      if (Zotero.ItemTypes.getName(item.itemType) === 'attachment' && item.getField('title') === CONVERSATION_ATTACHMENT_TITLE) {
+      if (Zotero.ItemTypes.getName(item.itemType) === 'attachment' && item.getField('title')?.startsWith(GEMINI_CHAT_TITLE_PREFIX)) {
         Zotero.log(`[Gemini PDF] Chat history attachment event: ${event} for item ID: ${id}, parent ID: ${item.parentID}`);
 
         // Iterate through active chat panes to find the one associated with this parent item
@@ -127,7 +128,7 @@ async function notify(event: string, type: string, ids: (string | number)[], ext
             }
 
             try {
-                const reloadedConversation = await ConversationManager.loadConversation(actualParentItem);
+                const reloadedConversation: ChatSessionHistory = await ConversationManager.loadConversation(actualParentItem);
                 paneState.currentConversation = reloadedConversation; // Update the pane's current conversation
                 uiManager._renderChatMessages(reloadedConversation);
             } catch (e: any) {

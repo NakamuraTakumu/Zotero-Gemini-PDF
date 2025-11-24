@@ -5,10 +5,12 @@ import {
   PREF_SELECTED_MODEL,
   PREF_USE_GOOGLE_SEARCH,
 } from "../utils/constants";
-import { Conversation } from "../types/chat";
+import { ChatSessionHistory, ParentItemFileMetadata } from "../types/chat";
 import { ConversationManager } from "./reader/conversation";
 import { ChatManager } from "./reader/chat";
 import { UIManager } from "./reader/ui";
+
+import { v4 as uuidv4 } from "uuid";
 
 // chat用タブ
 export class ReaderItemPaneFactory {
@@ -36,6 +38,7 @@ export class ReaderItemPaneFactory {
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
               <html:button id="send-button" class="send-button">Send</html:button>
+              <html:button id="new-chat-button" class="new-chat-button">新しいチャット</html:button>
           </html:div>
       </html:div>`,
       onInit: ({ body, refresh }) => {
@@ -70,29 +73,47 @@ export class ReaderItemPaneFactory {
           Zotero.log(`[Gemini PDF] Action event received for matching item ${state.itemId}`);
           (async () => {
             const { fullPrompt, summaryText, popupTriggerButton, originalButtonText } = customEvent.detail;
-            const { chatManager, uiManager, actualParentItem, currentConversation } = state;
+            const { chatManager, uiManager, actualParentItem, currentConversation } = state; // parentItemFileMetadata を削除
+
             const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
             const sendButton = body.querySelector("#send-button") as HTMLButtonElement;
             const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
             state.isGeminiRequestInProgress = true; // Set state to true for this pane
+
             if (chatManager && actualParentItem && currentConversation && uiManager) {
-              await chatManager.processAndSendMessage(
-                paneId, // Pass paneId
-                summaryText,
-                fullPrompt,
-                actualParentItem,
-                currentConversation,
-                {
-                  uiManager: uiManager, // Pass uiManager reference
-                  addBotMessage: uiManager.addBotMessage,
-                  updateBotMessage: uiManager.updateBotMessage,
-                  chatInput,
-                  sendButton,
-                  chatMessages,
-                  popupTriggerButton, // Pass the button reference
-                  originalButtonText, // Pass original text
+              // parentItemFileMetadata がまだロードされていない場合、ここでロード/作成する
+              if (!state.parentItemFileMetadata) {
+                try {
+                  state.parentItemFileMetadata = await chatManager.synchronizePdfContext(actualParentItem, { addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage });
+                } catch (e: any) {
+                  Zotero.logError(new Error(`Error synchronizing PDFs on first message from action: ${e.message || String(e)}`));
+                  uiManager.addBotMessage(`Error synchronizing PDFs: ${e.message || String(e)}`, 'error-message');
+                  state.isGeminiRequestInProgress = false;
+                  return;
                 }
-              );
+              }
+
+              // parentItemFileMetadata がロードまたは作成されたことを確認してから processAndSendMessage を呼び出す
+              if (state.parentItemFileMetadata) {
+                await chatManager.processAndSendMessage(
+                  paneId, // Pass paneId
+                  summaryText,
+                  fullPrompt,
+                  actualParentItem,
+                  currentConversation,
+                  state.parentItemFileMetadata, // parentItemFileMetadata を渡す
+                  {
+                    uiManager: uiManager, // Pass uiManager reference
+                    addBotMessage: uiManager.addBotMessage,
+                    updateBotMessage: uiManager.updateBotMessage,
+                    chatInput,
+                    sendButton,
+                    chatMessages,
+                    popupTriggerButton, // Pass the button reference
+                    originalButtonText, // Pass original text
+                  }
+                );
+              }
             }
           })();
         };
@@ -104,6 +125,7 @@ export class ReaderItemPaneFactory {
           eventHandler: handleGeminiAction,
           doc, // Store doc
           body, // Store body
+          parentItemFileMetadata: null, // 初期化時にnullを設定
         };
       },
       onDestroy: ({ body }) => {
@@ -144,8 +166,9 @@ export class ReaderItemPaneFactory {
         const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
         const sendButton = body.querySelector("#send-button") as HTMLButtonElement;
         const chatResizer = body.querySelector("#chat-resizer") as HTMLDivElement;
+        const newChatButton = body.querySelector("#new-chat-button") as HTMLButtonElement; // Get reference to new button
 
-        if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer) return;
+        if (!doc || !chatMessages || !chatInput || !sendButton || !chatResizer || !newChatButton) return; // Add newChatButton to null check
 
         uiManager.initModelSelector();
         uiManager.initGoogleSearchCheckbox();
@@ -167,15 +190,20 @@ export class ReaderItemPaneFactory {
           ? await Zotero.Items.getAsync(item.parentID)
           : item;
 
-        let currentConversation: Conversation | null = null;
+        let currentConversation: ChatSessionHistory | null = null;
+        let parentItemFileMetadata: ParentItemFileMetadata | null = null; // ParentItemFileMetadata を追加
 
         if (actualParentItem) {
           try {
             currentConversation = await ConversationManager.loadConversation(actualParentItem);
-            uiManager._renderChatMessages(currentConversation); // Corrected call
+            Zotero.debug(`[ReaderItemPane] onRender: Loaded conversation history length: ${currentConversation.history.length}`);
+            // Assign to paneState immediately after loading to ensure it's the source of truth
+            paneState.currentConversation = currentConversation;
+            uiManager._renderChatMessages(paneState.currentConversation); // Use paneState.currentConversation
+            // ParentItemFileMetadata のロードと同期は初回メッセージ送信時に行うため、ここでは行わない
           } catch (e: any) {
-            Zotero.logError(new Error(`Error loading conversation: ${e.message || String(e)}`));
-            uiManager.addBotMessage(`Error loading conversation: ${e.message || String(e)}`, 'error-message');
+            Zotero.logError(new Error(`Error loading conversation or syncing PDFs: ${e.message || String(e)}`));
+            uiManager.addBotMessage(`Error loading conversation or syncing PDFs: ${e.message || String(e)}`, 'error-message');
           }
         }
 
@@ -188,6 +216,7 @@ export class ReaderItemPaneFactory {
         Zotero.log(`[Gemini PDF] Pane ${paneId} onRender: Stored itemId is ${paneState.itemId}`);
         paneState.actualParentItem = actualParentItem;
         paneState.currentConversation = currentConversation;
+        paneState.parentItemFileMetadata = parentItemFileMetadata; // paneStateにParentItemFileMetadataを格納
         chatResizer.addEventListener("mousedown", (e: MouseEvent) => {
           e.preventDefault();
           const startY = e.clientY;
@@ -215,12 +244,27 @@ export class ReaderItemPaneFactory {
         const handleSendMessage = async () => {
           const messageText = chatInput.value;
           if (messageText.trim() === "") return;
-          if (actualParentItem && currentConversation) {
-            await chatManager.processAndSendMessage(
-              paneId, // Pass paneId
-              messageText, messageText, actualParentItem, currentConversation,
-              { uiManager: uiManager, addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
-            );
+          if (actualParentItem && paneState.currentConversation) { // Changed currentConversation to paneState.currentConversation
+            // parentItemFileMetadata がまだロードされていない場合、ここでロード/作成する
+            if (!paneState.parentItemFileMetadata) {
+              try {
+                paneState.parentItemFileMetadata = await chatManager.synchronizePdfContext(actualParentItem, { addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage });
+              } catch (e: any) {
+                Zotero.logError(new Error(`Error synchronizing PDFs on first message: ${e.message || String(e)}`));
+                uiManager.addBotMessage(`Error synchronizing PDFs: ${e.message || String(e)}`, 'error-message');
+                return;
+              }
+            }
+
+            // parentItemFileMetadata がロードまたは作成されたことを確認してから processAndSendMessage を呼び出す
+            if (paneState.parentItemFileMetadata) {
+              await chatManager.processAndSendMessage(
+                paneId, // Pass paneId
+                messageText, messageText, actualParentItem, paneState.currentConversation, // Changed currentConversation to paneState.currentConversation
+                paneState.parentItemFileMetadata, // parentItemFileMetadata を渡す
+                { uiManager: uiManager, addBotMessage: uiManager.addBotMessage, updateBotMessage: uiManager.updateBotMessage, chatInput, sendButton, chatMessages, popupTriggerButton: null, originalButtonText: undefined } // Pass null for popup button
+              );
+            }
           }
         };
         sendButton.addEventListener("click", handleSendMessage);
@@ -229,6 +273,30 @@ export class ReaderItemPaneFactory {
             event.preventDefault();
             handleSendMessage();
           }
+        });
+
+        // Event listener for the "New Chat" button
+        newChatButton.addEventListener("click", () => {
+          if (!actualParentItem) {
+            Zotero.debug("[Gemini PDF] Cannot start new chat: No parent item selected.");
+            return;
+          }
+
+          Zotero.debug("[Gemini PDF] Starting a new chat session.");
+          const newChatId = uuidv4();
+          const newChatTitle = "新しいチャット"; // Default title for new chats
+          const newConversation: ChatSessionHistory = {
+            metadata: {
+              zoteroParentItemKey: actualParentItem.key,
+              chatId: newChatId,
+              chatTitle: newChatTitle,
+            },
+            history: [],
+          };
+          paneState.currentConversation = newConversation;
+          uiManager._renderChatMessages(paneState.currentConversation); // Clear and render empty chat
+          chatInput.value = ""; // Clear input field
+          Zotero.debug(`[Gemini PDF] New chat session started with ID: ${newChatId}`);
         });
       },
     });

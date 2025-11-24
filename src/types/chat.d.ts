@@ -1,25 +1,71 @@
 // gemini-pdf/src/types/chat.d.ts
 
+// gemini-pdf/src/types/chat.d.ts
+
 /**
- * Represents the overall structure of a conversation file.
+ * Zotero親アイテムに添付されたGemini File API関連のPDF添付ファイルすべての情報を管理するJSONのインターフェース
  */
-export interface Conversation {
-  metadata: ConversationMetadata;
-  history: ConversationHistoryItem[];
+export interface ParentItemFileMetadata {
+  zoteroParentItemKey: string;
+  files: ParentItemFileMetadataFile[];
 }
 
 /**
- * Metadata for the conversation, linking it to Zotero items and Gemini files.
+ * ParentItemFileMetadata内の各ファイルの情報
  */
-export interface ConversationMetadata {
-  version: string;
-  zoteroParentItemKey: string;
-  files: ConversationFile[];
+export interface ParentItemFileMetadataFile {
+  zoteroAttachmentKey: string;
+  geminiFileUri: string;
+  fileName: string;
   lastUploadTimestamp: string; // ISO 8601 format
 }
 
 /**
- * Represents a single file used as context in the conversation.
+ * チャットセッション履歴のメタデータ
+ */
+export interface ChatSessionHistoryMetadata {
+  zoteroParentItemKey: string;
+  chatId: string;
+  chatTitle: string;
+}
+
+/**
+ * 個々のチャットセッション履歴の全体構造
+ */
+export interface ChatSessionHistory {
+  metadata: ChatSessionHistoryMetadata;
+  history: ChatMessage[];
+}
+
+/**
+ * 会話内の個々のメッセージエントリ
+ */
+export interface ChatMessage {
+  sequence: number;
+  timestamp: string; // ISO 8601 format
+  role: "user" | "model";
+  model?: string; // modelロールの場合のみ
+  parts: { text: string }[];
+  groundingMetadata?: any;
+}
+
+/**
+ * 現在のコードベースでConversationManagerが利用している会話の型定義
+ * 新しいChatSessionHistoryへの移行を考慮し、一時的に残す
+ */
+export interface Conversation {
+  metadata: {
+    version: string;
+    zoteroParentItemKey: string;
+    files: ConversationFile[];
+    lastUploadTimestamp: string; // ISO 8601 format
+  };
+  history: ConversationHistoryItem[];
+}
+
+/**
+ * 現在のコードベースでConversationManagerが利用しているConversationFileの型定義
+ * 新しいParentItemFileMetadataFileへの移行を考慮し、一時的に残す
  */
 export interface ConversationFile {
   zoteroAttachmentKey: string;
@@ -29,7 +75,8 @@ export interface ConversationFile {
 }
 
 /**
- * Represents a single message entry in the conversation history.
+ * 現在のコードベースでConversationManagerが利用しているConversationHistoryItemの型定義
+ * 新しいChatMessageへの移行を考慮し、一時的に残す
  */
 export interface ConversationHistoryItem {
   sequence: number;

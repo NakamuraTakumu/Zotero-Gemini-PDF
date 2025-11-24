@@ -1,6 +1,6 @@
 import { getPref } from "../../utils/prefs";
 import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
-import { Conversation, ConversationFile } from "../../types/chat";
+import { ChatSessionHistory, ChatMessage, ParentItemFileMetadata, ParentItemFileMetadataFile } from "../../types/chat"; // ParentItemFileMetadata, ParentItemFileMetadataFile をインポート
 import { Content, Part } from "@google/genai";
 import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
 import { ConversationManager } from "./conversation";
@@ -41,14 +41,17 @@ export class ChatManager {
 
   /**
    * Synchronizes the PDF context with the Gemini File API.
+   * 現在のチャットセッションとは独立してParentItemFileMetadataを管理し、PDFファイルをGemini APIに同期します。
    */
   async synchronizePdfContext(
     parentItem: Zotero.Item,
-    conversation: Conversation,
     ui: { addBotMessage: (html: string, className?: string) => HTMLDivElement, updateBotMessage: (element: HTMLDivElement, html: string) => void }
-  ): Promise<Conversation> {
+  ): Promise<ParentItemFileMetadata> { // 戻り値を ParentItemFileMetadata に変更
     Zotero.debug("Starting PDF context synchronization...");
     const statusMessageDiv = ui.addBotMessage("Syncing PDFs...", "sync-message");
+
+    // ParentItemFileMetadata をロード
+    let parentItemFileMetadata = await ConversationManager.loadParentItemFileMetadata(parentItem);
 
     const childAttachmentIds = parentItem.getAttachments(false);
     const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
@@ -60,19 +63,27 @@ export class ChatManager {
 
     const syncPromises = pdfAttachments.map(async (pdf) => {
       const pdfKey = pdf.key;
-      let fileInfo = conversation.metadata.files.find(
+      let fileInfo = parentItemFileMetadata.files.find(
         (f) => f.zoteroAttachmentKey === pdfKey,
       );
 
       let needsUpload = false;
       if (fileInfo) {
-        Zotero.debug(`Checking status of existing file: ${fileInfo.geminiFileName}`);
-        const metadata = await getFileMetadata(fileInfo.geminiFileName);
-        if (!metadata) {
-          Zotero.debug(`File ${fileInfo.geminiFileName} is expired or missing. Re-uploading.`);
-          needsUpload = true;
+        Zotero.debug(`Checking status of existing file: ${fileInfo.fileName} (${fileInfo.geminiFileUri})`);
+        // Gemini APIにファイルが存在するかチェック
+        // geminiFileUriからファイル名（files/xxxx）を抽出して渡す
+        const geminiFileName = fileInfo.geminiFileUri.split('/').pop();
+        if (!geminiFileName) {
+            Zotero.logError(new Error(`Could not extract Gemini file name from URI: ${fileInfo.geminiFileUri}`));
+            needsUpload = true;
         } else {
-          Zotero.debug(`File ${fileInfo.geminiFileName} is still valid.`);
+            const metadata = await getFileMetadata(`files/${geminiFileName}`); // files/をプレフィックスとして追加
+            if (!metadata) {
+                Zotero.debug(`File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is expired or missing. Re-uploading.`);
+                needsUpload = true;
+            } else {
+                Zotero.debug(`File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is still valid.`);
+            }
         }
       } else {
         Zotero.debug(`No existing file record for PDF: ${pdf.getField('title')}. Uploading.`);
@@ -90,23 +101,24 @@ export class ChatManager {
           ui.updateBotMessage(statusMessageDiv, `Uploading ${pdfTitle}...`);
           const uploadResult = await uploadFile(pdfPath, pdfTitle);
           
-          if (uploadResult && uploadResult.uri && uploadResult.name) {
+          if (uploadResult && uploadResult.uri) { // uploadResult.name は不要
             updated = true;
 
-            const newFileInfo: ConversationFile = {
+            const newFileInfo: ParentItemFileMetadataFile = { // ParentItemFileMetadataFile を使用
               zoteroAttachmentKey: pdfKey,
               geminiFileUri: uploadResult.uri,
-              geminiFileName: uploadResult.name,
               fileName: pdfTitle,
+              lastUploadTimestamp: new Date().toISOString(), // タイムスタンプを追加
             };
 
-            conversation.metadata.files = conversation.metadata.files.filter(
+            // 既存のファイルを更新または追加
+            parentItemFileMetadata.files = parentItemFileMetadata.files.filter(
               (f) => f.zoteroAttachmentKey !== pdfKey,
             );
-            conversation.metadata.files.push(newFileInfo);
+            parentItemFileMetadata.files.push(newFileInfo);
             Zotero.debug(`Successfully uploaded and recorded file: ${pdfTitle}`);
           } else {
-            throw new Error("Upload result is invalid or missing URI/name.");
+            throw new Error("Upload result is invalid or missing URI.");
           }
 
         } catch (uploadError: any) {
@@ -119,14 +131,14 @@ export class ChatManager {
     await Promise.all(syncPromises);
 
     if (updated) {
-      conversation.metadata.lastUploadTimestamp = new Date().toISOString();
+      await ConversationManager.saveParentItemFileMetadata(parentItem, parentItemFileMetadata);
     }
     
     ui.updateBotMessage(statusMessageDiv, "PDF sync complete.");
     setTimeout(() => statusMessageDiv.remove(), 2000);
 
     Zotero.debug("PDF context synchronization finished.");
-    return conversation;
+    return parentItemFileMetadata;
   }
 
   async processAndSendMessage(
@@ -134,7 +146,8 @@ export class ChatManager {
     textForHistory: string,
     textForApi: string,
     actualParentItem: Zotero.Item,
-    currentConversation: Conversation,
+    currentConversation: ChatSessionHistory,
+    parentItemFileMetadata: ParentItemFileMetadata, // ParentItemFileMetadata を引数に追加
     ui: {
       uiManager: import("./ui").UIManager; // Add UIManager to the UI context
       addBotMessage: (html: string, className?: string) => HTMLDivElement;
@@ -146,7 +159,7 @@ export class ChatManager {
       originalButtonText?: string;
     }
   ) {
-    if (!actualParentItem || !currentConversation) {
+    if (!actualParentItem || !currentConversation || !parentItemFileMetadata) {
       return;
     }
 
@@ -162,22 +175,26 @@ export class ChatManager {
       ui.chatInput.value = "";
     }
 
-    try {
-      currentConversation = await this.synchronizePdfContext(
-        actualParentItem,
-        currentConversation,
-        ui
-      );
-      await ConversationManager.saveConversation(actualParentItem, currentConversation);
-    } catch (syncError: any) {
-      Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
-      ui.addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
-      ui.chatInput.disabled = false;
-      ui.sendButton.disabled = false;
-      return;
-    }
+    // PDF同期はprocessAndSendMessageの外部で行われるため、ここからは削除
+    // ParentItemFileMetadataは既に引数として渡されている
+    // try {
+    //   currentConversation = await this.synchronizePdfContext(
+    //     actualParentItem,
+    //     currentConversation,
+    //     ui
+    //   );
+    //   await ConversationManager.saveConversation(actualParentItem, currentConversation);
+    // } catch (syncError: any) {
+    //   Zotero.logError(new Error(`PDF Sync failed: ${syncError.message || String(syncError)}`));
+    //   ui.addBotMessage(`Error synchronizing PDFs: ${syncError.message || String(syncError)}`, 'error-message');
+    //   ui.chatInput.disabled = false;
+    //   ui.sendButton.disabled = false;
+    //   return;
+    // }
 
+    Zotero.debug(`[ChatManager] Before addUserMessage, history length: ${currentConversation.history.length}`);
     ConversationManager.addUserMessage(currentConversation, textForHistory);
+    Zotero.debug(`[ChatManager] After addUserMessage, history length: ${currentConversation.history.length}`);
     await ConversationManager.saveConversation(actualParentItem, currentConversation);
     ui.uiManager._renderChatMessages(currentConversation); // Force re-render after adding user message
 
@@ -194,7 +211,8 @@ export class ChatManager {
       historyForApi.pop();
 
       const userParts: Part[] = [{ text: textForApi }];
-      for (const file of currentConversation.metadata.files) {
+      // ParentItemFileMetadata からファイルのURIを取得して userParts に追加
+      for (const file of parentItemFileMetadata.files) {
         userParts.unshift({
           fileData: {
             mimeType: "application/pdf",
@@ -236,7 +254,9 @@ export class ChatManager {
       }
       ui.updateBotMessage(botMessageDiv, messageHtml);
 
+      Zotero.debug(`[ChatManager] Before addBotMessage, history length: ${currentConversation.history.length}`);
       ConversationManager.addBotMessage(currentConversation, botResponseText || "", getPref(PREF_SELECTED_MODEL) as string, groundingMetadata);
+      Zotero.debug(`[ChatManager] After addBotMessage, history length: ${currentConversation.history.length}`);
       await ConversationManager.saveConversation(actualParentItem, currentConversation);
 
     } catch (error: any) {

@@ -5,7 +5,7 @@ import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
 import { ChatManager } from "./modules/reader/chat";
 import { UIManager } from "./modules/reader/ui";
-import { Conversation } from "./types/chat";
+import { ChatSessionHistory, ParentItemFileMetadata } from "./types/chat";
 
 class Addon {
   public data: {
@@ -33,7 +33,8 @@ class Addon {
         itemId?: number; // Add itemId
         eventHandler?: (event: CustomEvent) => void;
         actualParentItem?: Zotero.Item | null;
-        currentConversation?: Conversation | null;
+        currentConversation?: ChatSessionHistory | null;
+        parentItemFileMetadata?: ParentItemFileMetadata | null;
         isGeminiRequestInProgress?: boolean; // Per-pane request state
         doc?: Document; // Add doc property
         body?: HTMLElement; // Add body property

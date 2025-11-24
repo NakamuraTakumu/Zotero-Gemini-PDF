@@ -36,3 +36,11 @@ To evolve "Gemini PDF" into a comprehensive and highly functional tool, the foll
     *   **Truncation Logic**: Implement logic in `src/modules/readerItemPane.ts` to truncate the chat history based on user-defined preferences before sending it to the Gemini API.
 
 This `GEMINI.md` will be continuously updated to reflect project progress, new features, and strategic insights.
+
+## Interaction Language
+
+Please use Japanese for all interactions and communications related to this project.
+
+## Specification Documentation
+
+After receiving specifications, I will summarize them into a document for clarity and record-keeping.
