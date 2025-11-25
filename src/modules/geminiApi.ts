@@ -174,21 +174,21 @@ export async function sendMessageToGemini(
 
     const systemInstructionText = getPref(PREF_SYSTEM_PROMPT) as string | undefined;
 
-    const request: any = {
+    const requestBody: any = {
         model: selectedModel,
         contents: fullConversation,
         config: {
-          tools: tools,
+            tools: tools,
         },
     };
 
     if (systemInstructionText) {
-        request.systemInstruction = { parts: [{ text: systemInstructionText }] };
+        requestBody.config.systemInstruction = systemInstructionText;
     }
+    
+    Zotero.log(`[Gemini] Full API Request: ${JSON.stringify(requestBody, null, 2)}`);
 
-    Zotero.log(`[Gemini] Full API Request: ${JSON.stringify(request, null, 2)}`);
-
-    const result: GenerateContentResponse = await client.models.generateContent(request);
+    const result: GenerateContentResponse = await client.models.generateContent(requestBody);
 
     Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`);
 
