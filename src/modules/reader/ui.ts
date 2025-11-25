@@ -97,6 +97,11 @@ export class UIManager {
     });
   }
 
+  getIncludeThoughts(): boolean {
+    const includeThoughtsCheckbox = this.body.querySelector("#include-thoughts-checkbox") as HTMLInputElement;
+    return includeThoughtsCheckbox ? includeThoughtsCheckbox.checked : false;
+  }
+
   initSessionSwitcher() {
     const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
     if (!sessionSwitcher) return;

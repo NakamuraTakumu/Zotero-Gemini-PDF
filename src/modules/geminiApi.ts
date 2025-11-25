@@ -153,14 +153,16 @@ export async function getFileMetadata(
 export async function sendMessageToGemini(
   history: Content[],
   userParts: Part[],
+  includeThoughts: boolean, // Add this
   tools?: any[],
   modelName?: string,
-): Promise<{ responseText: string | null; groundingMetadata?: any }> {
+): Promise<{ thoughts: string[]; responseText: string | null; groundingMetadata?: any }> {
   const selectedModel = modelName || (getPref(PREF_SELECTED_MODEL) as string);
   Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
   const client = getGeminiClient();
   if (!client) {
     return {
+      thoughts: [],
       responseText: "Error: Gemini model not initialized. Please set your API key in preferences.",
       groundingMetadata: undefined
     };
@@ -182,6 +184,10 @@ export async function sendMessageToGemini(
         },
     };
 
+    if (includeThoughts) {
+        requestBody.config.thinkingConfig = { includeThoughts: true };
+    }
+
     if (systemInstructionText) {
         requestBody.config.systemInstruction = systemInstructionText;
     }
@@ -192,6 +198,7 @@ export async function sendMessageToGemini(
 
     Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`);
 
+    const thoughts: string[] = [];
     let responseText: string | null = null;
     let groundingMetadata: any | undefined = undefined;
 
@@ -201,7 +208,9 @@ export async function sendMessageToGemini(
       if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
         const responsePartTexts: string[] = [];
         for (const part of candidate.content.parts) {
-          if (part.text) {
+          if (part.thought) {
+            thoughts.push(part.text as string);
+          } else if (part.text) {
             responsePartTexts.push(part.text);
           } else {
             responsePartTexts.push("（非テキストパートを受信しました）");
@@ -228,17 +237,19 @@ export async function sendMessageToGemini(
 
         Zotero.logError(new Error(`No text part found in Gemini response. ${errorReason}`));
         return {
+          thoughts: [],
           responseText: `Error: Did not receive a valid response from Gemini. ${errorReason}`,
           groundingMetadata: undefined
         };
     }
     Zotero.log(`[Gemini] Raw response from API: ${responseText}`);
-    return { responseText, groundingMetadata };
+    return { thoughts, responseText, groundingMetadata };
   } catch (error: any) {
     Zotero.logError(
       new Error(`Error sending message to Gemini: ${error.message || String(error)}`),
     );
     return {
+      thoughts: [],
       responseText: `Error: Could not get response from Gemini. ${error.message || String(error)}`,
       groundingMetadata: undefined
     };

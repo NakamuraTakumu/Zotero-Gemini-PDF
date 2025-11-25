@@ -70,9 +70,10 @@ export class ReaderItemPaneFactory {
           <html:div class="chat-model-selector-area">
               <html:label for="gemini-model-select">Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
-              <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
-              <html:input type="checkbox" id="use-google-search-checkbox" />
-          </html:div>
+                                      <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
+                                      <html:input type="checkbox" id="use-google-search-checkbox" />
+                                      <html:label for="include-thoughts-checkbox" style="margin-left: 10px;">Include Thoughts:</html:label>
+                                      <html:input type="checkbox" id="include-thoughts-checkbox" />          </html:div>
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
               <html:div style="display: flex; flex-direction: column; gap: 5px;">

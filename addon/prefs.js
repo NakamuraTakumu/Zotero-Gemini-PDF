@@ -135,6 +135,7 @@ pref("__prefsPrefix__.promptForSelection", "提示されたテキストについ
 pref("__prefsPrefix__.geminiModelList", "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview");
 pref("__prefsPrefix__.geminiSelectedModel", "gemini-2.5-flash-lite");
 pref("__prefsPrefix__.geminiUseGoogleSearch", false);
+pref("__prefsPrefix__.includeThoughts", false);
 pref("__prefsPrefix__.chatPanelHeight", 300);
 pref("__prefsPrefix__.titleGenerationModel", "gemini-2.5-flash");
 pref("__prefsPrefix__.titleGenerationPrompt", "以下の会話のタイトルを5〜10単語程度の日本語で簡潔に生成してください。タイトルのみを返信してください。\\n\\nユーザー: {userPrompt}\\nアシスタント: {modelResponse}");

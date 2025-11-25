@@ -85,7 +85,7 @@ export class ChatManager {
     const modelForTitle = getPref(PREF_TITLE_GENERATION_MODEL) as string;
 
     try {
-      const { responseText } = await sendMessageToGemini([], [{ text: titlePrompt }], undefined, modelForTitle);
+      const { responseText } = await sendMessageToGemini([], [{ text: titlePrompt }], false, undefined, modelForTitle);
       if (responseText) {
         const newTitle = responseText.trim().replace(/^「|」$/g, '').replace(/\.$/, '');
         await this.updateSessionTitleAndFlag(session.metadata.chatId, newTitle);
@@ -293,6 +293,7 @@ export class ChatManager {
       }
 
       const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
+      const includeThoughts = ui.uiManager.getIncludeThoughts();
       let tools: any[] | undefined = undefined;
       if (useGoogleSearch) {
         tools = [
@@ -300,9 +301,14 @@ export class ChatManager {
           { urlContext: {} }
         ];
       }
-      const { responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(truncatedHistory, userParts, tools);
+      const { thoughts, responseText: botResponseText, groundingMetadata } = await sendMessageToGemini(truncatedHistory, userParts, includeThoughts, tools);
 
       let messageHtml = this.renderMarkdown(botResponseText || "No response.");
+
+      if (thoughts && thoughts.length > 0) {
+        const thoughtsHtml = thoughts.map(t => `<div class="thought">${this.renderMarkdown(t)}</div>`).join('');
+        messageHtml = `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` + messageHtml;
+      }
 
       if (groundingMetadata) {
         let sources = '';
