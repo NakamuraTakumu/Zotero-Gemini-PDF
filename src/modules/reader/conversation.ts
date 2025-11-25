@@ -227,7 +227,8 @@ export class ConversationManager {
         attachment.attachmentLinkMode === Zotero.Attachments.LINK_MODE_IMPORTED_FILE
       ) {
         try {
-          await attachment.erase(); // 添付ファイルを削除
+          attachment.deleted = true;
+        await attachment.saveTx(); // 添付ファイルを削除
           Zotero.debug(`Successfully deleted conversation attachment for chatId: ${chatId}`);
           return; // 削除したら終了
         } catch (e: any) {
