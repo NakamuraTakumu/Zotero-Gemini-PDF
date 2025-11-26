@@ -269,3 +269,31 @@
 *|div.sources-container a:hover {
   text-decoration: underline;
 }
+
+/* Citation Container Styling */
+.citation-container {
+  position: relative; /* 引用元を絶対配置するための基準 */
+  background-color: transparent; /* blockquoteに合わせて背景は親に依存 */
+  border-left: 4px solid var(--chat-border-color); /* blockquoteのスタイルを模倣 */
+  padding: 1.5em 15px 1em 15px; /* 上にスペースを空ける (引用元のため) */
+  margin: 1.5em 0;
+}
+
+.citation-source {
+  position: absolute;
+  top: 5px; /* 上からの位置 */
+  left: 15px; /* 左からの位置 */
+  font-size: 0.75em; /* さらに小さく */
+  color: #888; /* 少し薄く */
+  font-style: italic;
+}
+
+@media (prefers-color-scheme: dark) {
+  .citation-source {
+    color: #aaa;
+  }
+}
+
+.citation-content {
+  /* スタイル不要 */
+}
