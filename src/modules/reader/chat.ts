@@ -6,6 +6,7 @@ import {
   PREF_CONTEXT_WINDOW_SIZE,
   PREF_TITLE_GENERATION_MODEL,
   PREF_TITLE_GENERATION_PROMPT,
+  PREF_INCLUDE_THOUGHTS,
 } from "../../utils/constants";
 import { ChatSessionHistory, ChatMessage, ParentItemFileMetadata, ParentItemFileMetadataFile } from "../../types/chat"; // ParentItemFileMetadata, ParentItemFileMetadataFile をインポート
 import { Content, Part } from "@google/genai";
@@ -293,7 +294,7 @@ export class ChatManager {
       }
 
       const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
-      const includeThoughts = ui.uiManager.getIncludeThoughts();
+      const includeThoughts = getPref(PREF_INCLUDE_THOUGHTS) as boolean;
       let tools: any[] | undefined = undefined;
       if (useGoogleSearch) {
         tools = [

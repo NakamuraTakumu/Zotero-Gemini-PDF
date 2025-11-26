@@ -1,5 +1,5 @@
 import { getPref, setPref } from "../../utils/prefs";
-import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH } from "../../utils/constants";
+import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_INCLUDE_THOUGHTS } from "../../utils/constants";
 import { ChatSessionHistory } from "../../types/chat"; // Import ChatSessionHistory type
 import { ChatManager } from "./chat"; // Import ChatManager type
 
@@ -97,9 +97,19 @@ export class UIManager {
     });
   }
 
-  getIncludeThoughts(): boolean {
+  initIncludeThoughtsCheckbox() {
     const includeThoughtsCheckbox = this.body.querySelector("#include-thoughts-checkbox") as HTMLInputElement;
-    return includeThoughtsCheckbox ? includeThoughtsCheckbox.checked : false;
+    if (!includeThoughtsCheckbox) return;
+
+    const includeThoughts = getPref(PREF_INCLUDE_THOUGHTS) as boolean;
+    Zotero.log(`[Gemini PDF] UI: Initializing Include Thoughts checkbox. Saved PREF_INCLUDE_THOUGHTS value is: ${includeThoughts}.`);
+    includeThoughtsCheckbox.checked = includeThoughts;
+
+    includeThoughtsCheckbox.addEventListener("change", (e) => {
+      const newValue = (e.target as HTMLInputElement).checked;
+      setPref(PREF_INCLUDE_THOUGHTS, newValue);
+      Zotero.log(`[Gemini PDF] UI: Include Thoughts changed to: ${newValue}.`);
+    });
   }
 
   initSessionSwitcher() {

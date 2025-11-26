@@ -275,6 +275,7 @@ export class ReaderItemPaneFactory {
         // Initialize UI elements using UIManager methods
         managers.uiManager.initModelSelector();
         managers.uiManager.initGoogleSearchCheckbox();
+        managers.uiManager.initIncludeThoughtsCheckbox();
         managers.uiManager.initSessionSwitcher();
         managers.uiManager.initDeleteButton();
 

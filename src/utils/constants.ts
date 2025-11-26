@@ -17,3 +17,4 @@ export const PREF_CONTEXT_WINDOW_SIZE = "contextWindowSize";
 export const PREF_CHAT_PANEL_HEIGHT = "chatPanelHeight";
 export const PREF_TITLE_GENERATION_MODEL = "titleGenerationModel";
 export const PREF_TITLE_GENERATION_PROMPT = "titleGenerationPrompt";
+export const PREF_INCLUDE_THOUGHTS = "includeThoughts";
