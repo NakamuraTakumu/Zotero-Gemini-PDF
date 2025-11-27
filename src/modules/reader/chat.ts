@@ -16,6 +16,7 @@ import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
 import markdownItKatex from "@vscode/markdown-it-katex";
 import markdownItContainer from 'markdown-it-container'; // 追加
+import type { Token } from 'markdown-it';
 import { ChatSessionManager } from "./chatSessionManager"; // ChatSessionManager をインポート
 
 // Helper for rendering markdown
@@ -29,28 +30,29 @@ const initMarkdownRenderer = (window: Window) => {
 
   const md = new MarkdownIt({ xhtmlOut: true })
     .use(markdownItContainer, 'citation', { // containerPluginを先に
-      validate: function(params) {
+      validate: function(params: string) {
         // 'citation 'の後ろに、'|' を含む文字列があるかチェック
         return params.trim().match(/^citation\s+(.*)\|(.+)/);
       },
-      render: function (tokens, idx) {
-        const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
-        
+      render: function (tokens: Token[], idx: number) {
         if (tokens[idx].nesting === 1) {
-          // 開きタグ
-          const source = md.utils.escapeHtml(m[1].trim());
-          const originalQuote = md.utils.escapeHtml(m[2].trim());
+          const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
+          if (m) {
+            // 開きタグ
+            const source = md.utils.escapeHtml(m[1].trim());
+            const originalQuote = md.utils.escapeHtml(m[2].trim());
 
-          // コンテナの開始タグと、引用元情報、コンテンツをラップするdivを返す
-          // data-original-quoteにはヘッダーから取得した原文を格納
-          return `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
-                 `<div class="citation-source">${source}</div>\n` +
-                 `<div class="citation-content">\n`; // 中身はこの後レンダリングされる
-
+            // コンテナの開始タグと、引用元情報、コンテンツをラップするdivを返す
+            // data-original-quoteにはヘッダーから取得した原文を格納
+            return `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
+                   `<div class="citation-source">${source}</div>\n` +
+                   `<div class="citation-content">\n`; // 中身はこの後レンダリングされる
+          }
         } else {
           // 閉じタグ
           return '</div>\n</div>\n';
         }
+        return "";
       }
     })
     .use(katexPlugin, { // 既存のkatexPluginは後続に
