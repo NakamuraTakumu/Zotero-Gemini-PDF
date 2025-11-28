@@ -41,6 +41,10 @@ This `GEMINI.md` will be continuously updated to reflect project progress, new f
 
 Please use Japanese for all interactions and communications related to this project.
 
+## Interaction Language
+
+Please use Japanese for all interactions and communications related to this project.
+
 ## Specification Documentation
 
 After receiving specifications, I will summarize them into a document for clarity and record-keeping.

@@ -9,3 +9,5 @@ item-section-example2-sidenav-tooltip =
 item-section-example2-button-tooltip =
     .tooltiptext = Unregister this section
 item-info-row-example-label = Example Row
+gemini-pdf-reader-new-chat-title = 無題のチャット
+gemini-pdf-new-chat-button-label = 新しいチャット

@@ -9,14 +9,24 @@ import {
 } from "../utils/constants";
 import { ChatSessionHistory, ParentItemFileMetadata } from "../types/chat";
 import { ConversationManager } from "./reader/conversation";
-import { ChatManager } from "./reader/chat";
+
 import { UIManager } from "./reader/ui";
 import { ChatSessionManager } from "./reader/chatSessionManager"; // ChatSessionManager をインポート
 
 import { v4 as uuidv4 } from "uuid";
 
-// chat用タブ
+/**
+ * A factory class responsible for registering the chat pane UI and its lifecycle hooks with Zotero.
+ * All methods are static as this class is not instantiated, but rather serves as a namespace
+ * for UI registration and utility functions related to the reader pane.
+ */
 export class ReaderItemPaneFactory {
+  /**
+   * Dispatches a global event to notify other parts of the application about the
+   * status of a Gemini API request.
+   * @param {string} paneId The ID of the pane triggering the event.
+   * @param {boolean} isRequestInProgress The status of the API request.
+   */
   static dispatchRequestStatusChangedEvent(paneId: string, isRequestInProgress: boolean) {
     const event = new (Zotero.getMainWindow() as any).CustomEvent('gemini-pdf-request-status-changed', {
       bubbles: true,
@@ -26,16 +36,25 @@ export class ReaderItemPaneFactory {
     Zotero.getMainWindow().document.dispatchEvent(event);
   }
 
+  /**
+   * Ensures that the PDF attachments for the current item are synchronized with the Gemini File API.
+   * This is a helper method called before performing actions that require PDF context.
+   * @param {ChatPane} pane The instance of the chat pane.
+   * @returns {Promise<boolean>} A promise that resolves to true if the metadata is present and valid.
+   */
   static async ensureParentItemFileMetadata(pane: ChatPane): Promise<boolean> {
-    const { managers, zoteroContext, chatData, runtimeState, paneId } = pane;
-    if (!zoteroContext.actualParentItem || !managers.chatManager || !managers.uiManager) {
-      Zotero.logError(new Error("Cannot ensure parentItemFileMetadata: missing actualParentItem, chatManager, or uiManager."));
+    const { zoteroContext, chatData, runtimeState, paneId, managers } = pane;
+    if (!zoteroContext.actualParentItem || !managers.uiManager) {
+      Zotero.logError(new Error("Cannot ensure parentItemFileMetadata: missing actualParentItem or uiManager."));
       return false;
     }
 
     if (!chatData.parentItemFileMetadata) {
       try {
-        chatData.parentItemFileMetadata = await managers.chatManager.synchronizePdfContext(zoteroContext.actualParentItem, { addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage });
+        chatData.parentItemFileMetadata = await ConversationManager.synchronizePdfContext(
+          zoteroContext.actualParentItem,
+          { addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage }
+        );
         return true;
       } catch (e: any) {
         Zotero.logError(new Error(`Error synchronizing PDFs: ${e.message || String(e)}`));
@@ -48,6 +67,14 @@ export class ReaderItemPaneFactory {
     return true;
   }
 
+  /**
+   * Registers the main chat pane section with Zotero's ItemPaneManager.
+   * This method defines the UI structure (XHTML) and the lifecycle hooks that Zotero
+   * will call at different stages.
+   * - onInit: Called once when the pane is first created. It instantiates the ChatPane class.
+   * - onDestroy: Called when the pane is closed. It calls the ChatPane's destroy method for cleanup.
+   * - onRender: Called whenever the pane is displayed or the item changes. It delegates rendering to the ChatPane instance.
+   */
   static async registerReaderItemPaneSection() {
     Zotero.ItemPaneManager.registerSection({
       paneID: "reader-item-info",
@@ -63,23 +90,24 @@ export class ReaderItemPaneFactory {
       bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
           <html:div class="chat-messages" id="chat-messages"></html:div>
           <html:div class="chat-resizer" id="chat-resizer"></html:div>
-          <html:div class="chat-session-area" style="display: flex; align-items: center; gap: 5px; padding-bottom: 5px;">
+                    <html:div class="chat-session-area">
               <html:label for="chat-session-switcher">Session:</html:label>
-              <html:select id="chat-session-switcher" class="chat-session-switcher" style="flex-grow: 1;"></html:select>
+              <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
               <html:button id="delete-session-button" class="delete-session-button">🗑️</html:button>
           </html:div>
           <html:div class="chat-model-selector-area">
               <html:label for="gemini-model-select">Model:</html:label>
               <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
-                                      <html:label for="use-google-search-checkbox" style="margin-left: 10px;">Use Google Search:</html:label>
+                                      <html:label for="use-google-search-checkbox">Use Google Search:</html:label>
                                       <html:input type="checkbox" id="use-google-search-checkbox" />
-                                      <html:label for="include-thoughts-checkbox" style="margin-left: 10px;">Include Thoughts:</html:label>
+                                      <html:label for="include-thoughts-checkbox">Include Thoughts:</html:label>
                                       <html:input type="checkbox" id="include-thoughts-checkbox" />          </html:div>
+                                      
           <html:div class="chat-input-area">
               <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
-              <html:div style="display: flex; flex-direction: column; gap: 5px;">
-                  <html:button id="send-button" class="send-button">Send</html:button>
-                  <html:button id="new-chat-button" class="new-chat-button">新しいチャット</html:button>
+              <html:div class="chat-buttons-container">
+                                    <html:button id="send-button" class="send-button">Send</html:button>
+                                    <html:button id="new-chat-button" class="new-chat-button">New</html:button>
               </html:div>
           </html:div>
       </html:div>`,
@@ -116,6 +144,10 @@ export class ReaderItemPaneFactory {
     });
   }
 
+  /**
+   * Injects the CSS stylesheets required for the chat pane into the main Zotero window.
+   * @param {_ZoteroTypes.MainWindow} win The main Zotero window.
+   */
   static registerChatStyleSheet(win: _ZoteroTypes.MainWindow) {
     const doc = win.document;
     const chatStyles = ztoolkit.UI.createElement(doc, "link", {

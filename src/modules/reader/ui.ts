@@ -1,20 +1,90 @@
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_MODEL_LIST, PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_INCLUDE_THOUGHTS } from "../../utils/constants";
-import { ChatSessionHistory } from "../../types/chat"; // Import ChatSessionHistory type
-import { ChatManager } from "./chat"; // Import ChatManager type
+import { ChatSessionHistory } from "../../types/chat";
+import { ChatSessionManager } from "./chatSessionManager";
+import { ChatSession } from "./chatSession";
+import MarkdownIt from "markdown-it";
+import createDOMPurify from "dompurify";
+import markdownItKatex from "@vscode/markdown-it-katex";
+import markdownItContainer from 'markdown-it-container';
+import type { Token } from 'markdown-it';
+
+// Helper for rendering markdown (moved from chat.ts)
+const initMarkdownRenderer = (window: Window) => {
+  const DOMPurify = createDOMPurify(window as any); // Cast window to any
+
+  // Handle CJS/ESM interop issue with the imported module
+  const katexPlugin = typeof markdownItKatex === 'function'
+    ? markdownItKatex
+    : (markdownItKatex as any).default;
+
+  const md = new MarkdownIt({ xhtmlOut: true })
+    .use(markdownItContainer, 'citation', {
+      validate: function(params: string) {
+        return params.trim().match(/^citation\s+(.*)\|(.+)/);
+      },
+      render: function (tokens: Token[], idx: number) {
+        if (tokens[idx].nesting === 1) {
+          const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
+          if (m) {
+            const source = md.utils.escapeHtml(m[1].trim());
+            const originalQuote = md.utils.escapeHtml(m[2].trim());
+            return `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
+                   `<div class="citation-source">${source}</div>\n` +
+                   `<div class="citation-content">\n`;
+          }
+        } else {
+          return '</div>\n</div>\n';
+        }
+        return "";
+      }
+    })
+    .use(katexPlugin, {
+      throwOnError: false,
+      errorColor: "#cc0000",
+      output: "mathml",
+      strict: false,
+    });
+    // ▼▼▼ ここを追加 ▼▼▼
+  // 既存の数式レンダラーを取得（なければデフォルト処理）
+  // const oldMathBlock = md.renderer.rules.math_block || function(tokens, idx) {
+  //   return '<div class="katex-block">' + tokens[idx].content + '</div>';
+  // };
+
+  // // 数式ブロックのレンダラーを「スクロール用divで包む処理」で上書きする
+  // md.renderer.rules.math_block = (tokens, idx, options, env, self) => {
+  //   const html = oldMathBlock(tokens, idx, options, env, self);
+  //   // ここで強制的に div class="math-scroll" で包む
+  //   return `<div class="math-scroll">${html}</div>`;
+  // };
+  return (text: string): string => {
+    const sanitizedText = DOMPurify.sanitize(text, {
+      ADD_TAGS: ["math", "mi", "mo", "mn", "mtext", "mrow", "mfrac", "msup", "msub", "msubsup", "mover", "munder", "munderover", "msqrt", "mroot", "mfenced", "menclose", "mstyle", "mphantom", "mglyph", "mlabeledtr", "mtable", "mtr", "mtd", "maligngroup", "malignmark", "msgroup", "msrow", "mscol", "msline", "semantics", "annotation", "annotation-xml", "span", "svg", "path", "g", "rect", "use"],
+      ADD_ATTR: ["xmlns", "encoding", "class", "aria-hidden", "width", "height", "viewBox", "x", "y", "transform", "fill", "stroke", "stroke-width", "d", "style", "fill-opacity"]
+    });
+    return md.render(sanitizedText);
+  };
+};
 
 export class UIManager {
   private doc: Document;
   private body: HTMLElement;
   private chatMessages: HTMLDivElement;
+  private chatInput: HTMLTextAreaElement;
+  private sendButton: HTMLButtonElement;
   private prefObserverKeys: symbol[] = [];
-  private chatManager: ChatManager; // Add chatManager property
+  private chatSessionManager: ChatSessionManager;
+  public renderMarkdown: (text: string) => string;
 
-  constructor(doc: Document, body: HTMLElement, chatMessages: HTMLDivElement, chatManager: ChatManager) {
+
+  constructor(doc: Document, body: HTMLElement, chatMessages: HTMLDivElement, chatSessionManager: ChatSessionManager) {
     this.doc = doc;
     this.body = body;
     this.chatMessages = chatMessages;
-    this.chatManager = chatManager; // Assign chatManager
+    this.chatSessionManager = chatSessionManager;
+    this.chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
+    this.sendButton = body.querySelector("#send-button") as HTMLButtonElement;
+    this.renderMarkdown = initMarkdownRenderer(doc.defaultView as Window);
   }
 
   registerPrefObservers() {
@@ -45,7 +115,7 @@ export class UIManager {
     this.prefObserverKeys.push(searchObserverKey);
   }
 
-  unregisterPrefObservers() {
+  private unregisterPrefObservers() {
     this.prefObserverKeys.forEach(key => Zotero.Prefs.unregisterObserver(key));
     Zotero.log("[Gemini PDF] Unregistered preference observers.");
     this.prefObserverKeys = [];
@@ -121,7 +191,7 @@ export class UIManager {
     sessionSwitcher.onchange = (e) => {
       const newSessionId = (e.target as HTMLSelectElement).value;
       if (newSessionId) {
-        this.chatManager.switchSession(newSessionId);
+        this.chatSessionManager.switchSession(newSessionId);
       }
     };
   }
@@ -130,22 +200,22 @@ export class UIManager {
     const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
     if (!sessionSwitcher) return;
     
-    const sessions = this.chatManager.getAllSessions();
-    const activeSession = this.chatManager.getActiveSession();
+    const sessions = this.chatSessionManager.getAllSessions();
+    const activeSession = this.chatSessionManager.getActiveSession();
 
     const selectedValue = sessionSwitcher.value;
     sessionSwitcher.innerHTML = "";
 
     sessions.forEach(session => {
       const option = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
-      option.value = session.metadata.chatId;
-      option.textContent = session.metadata.chatTitle;
+      option.value = session.id;
+      option.textContent = session.title;
       sessionSwitcher.appendChild(option);
     });
 
     if (activeSession) {
-      sessionSwitcher.value = activeSession.metadata.chatId;
-    } else if (sessions.find(s => s.metadata.chatId === selectedValue)) {
+      sessionSwitcher.value = activeSession.id;
+    } else if (sessions.find(s => s.id === selectedValue)) {
       sessionSwitcher.value = selectedValue;
     }
   }
@@ -155,19 +225,19 @@ export class UIManager {
     if (!deleteButton) return;
 
     deleteButton.onclick = async () => {
-      const activeSession = this.chatManager.getActiveSession();
+      const activeSession = this.chatSessionManager.getActiveSession();
       if (!activeSession) {
         Zotero.debug("[Gemini PDF] No active session to delete.");
         return;
       }
 
       const confirmDelete = Zotero.getMainWindow().confirm(
-        `チャット「${activeSession.metadata.chatTitle}」を削除しますか？この操作は元に戻せません。`
+        `チャット「${activeSession.title}」を削除しますか？この操作は元に戻せません。`
       );
 
       if (confirmDelete) {
-        Zotero.debug(`[Gemini PDF] Deleting session: ${activeSession.metadata.chatTitle}`);
-        const success = await this.chatManager.deleteActiveSession();
+        Zotero.debug(`[Gemini PDF] Deleting session: ${activeSession.title}`);
+        const success = await this.chatSessionManager.deleteActiveSession();
         if (success) {
           // ドロップダウンの更新はdeleteActiveSession内のonActiveSessionChangeコールバックがトリガーする
           // ここで直接updateSessionSwitcher()を呼ぶ必要はない
@@ -178,12 +248,15 @@ export class UIManager {
     };
   }
 
-  _renderChatMessages(conversation: ChatSessionHistory) {
+  renderChatMessages(session: ChatSession | null) {
     this.chatMessages.innerHTML = "";
-    for (const message of conversation.history) {
+    if (!session) {
+      return;
+    }
+    for (const message of session.history.history) {
       const messageDiv = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
       messageDiv.className = `message ${message.role}-message`;
-      let messageHtml = this.chatManager.renderMarkdown(message.parts[0].text);
+      let messageHtml = this.renderMarkdown(message.parts[0].text);
       if (message.role === 'model' && message.groundingMetadata) {
         let sources = '';
         if (message.groundingMetadata.groundingChunks && message.groundingMetadata.groundingChunks.length > 0) {
@@ -208,6 +281,14 @@ export class UIManager {
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
 
+  addUserMessage(text: string): void {
+    const userMessageDiv = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
+    userMessageDiv.className = "message user-message";
+    userMessageDiv.innerHTML = this.renderMarkdown(text);
+    this.chatMessages.appendChild(userMessageDiv);
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
+
   addBotMessage = (html: string, className: string = 'bot-message'): HTMLDivElement => {
     const div = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "div") as HTMLDivElement;
     div.className = `message ${className}`;
@@ -217,8 +298,44 @@ export class UIManager {
     return div;
   };
 
-  updateBotMessage = (element: HTMLDivElement, html: string) => {
-    element.innerHTML = html;
+  updateBotMessage = (element: HTMLDivElement, responseText: string, thoughts?: string[], groundingMetadata?: any) => {
+    let messageHtml = this.renderMarkdown(responseText || "No response.");
+
+    if (thoughts && thoughts.length > 0) {
+      const thoughtsHtml = thoughts.map(t => `<div class="thought">${this.renderMarkdown(t)}</div>`).join('');
+      messageHtml = `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` + messageHtml;
+    }
+
+    if (groundingMetadata) {
+      let sources = '';
+      if (groundingMetadata.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
+        sources = groundingMetadata.groundingChunks.map((chunk: any, index: number) => {
+          if (chunk.web) {
+            return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+          }
+          return null;
+        }).filter(Boolean).join('');
+      } else if (groundingMetadata.retrievedReferences && groundingMetadata.retrievedReferences.length > 0) {
+        sources = groundingMetadata.retrievedReferences.map((ref: any, index: number) =>
+          `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`
+        ).join('');
+      }
+
+      if (sources) {
+        messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+      }
+    }
+    element.innerHTML = messageHtml;
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   };
+
+  setInputsDisabled(disabled: boolean): void {
+    this.chatInput.disabled = disabled;
+    this.sendButton.disabled = disabled;
+  }
+
+  clearChatInput(): void {
+    this.chatInput.value = "";
+    this.chatInput.focus();
+  }
 }

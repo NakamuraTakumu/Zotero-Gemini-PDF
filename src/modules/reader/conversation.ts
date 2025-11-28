@@ -8,8 +8,10 @@ import {
   ChatSessionHistory,
   ChatMessage,
   ParentItemFileMetadata,
+  ParentItemFileMetadataFile,
 } from "../../types/chat";
 import { v4 as uuidv4 } from "uuid";
+import { uploadFile, getFileMetadata } from "../geminiApi";
 
 export class ConversationManager {
   /**
@@ -396,5 +398,111 @@ export class ConversationManager {
         Zotero.debug(`Error writing to ParentItemFileMetadata file: ${e.message || String(e)}`);
       }
     }
+  }
+
+  /**
+   * Synchronizes PDF attachments of a Zotero item with the Gemini File API.
+   * It checks for existing files, uploads new or expired ones, and maintains a
+   * metadata record of the uploaded files.
+   * @param {Zotero.Item} parentItem The Zotero parent item whose attachments are to be synced.
+   * @param {{ addBotMessage: Function, updateBotMessage: Function }} ui An object with UI functions to display progress.
+   * @returns {Promise<ParentItemFileMetadata>} A promise that resolves to the updated file metadata.
+   */
+  static async synchronizePdfContext(
+    parentItem: Zotero.Item,
+    ui: { addBotMessage: (html: string, className?: string) => HTMLDivElement, updateBotMessage: (element: HTMLDivElement, html: string) => void }
+  ): Promise<ParentItemFileMetadata> { // 戻り値を ParentItemFileMetadata に変更
+    Zotero.debug("Starting PDF context synchronization...");
+    const statusMessageDiv = ui.addBotMessage("Syncing PDFs...", "sync-message");
+
+    // ParentItemFileMetadata をロード
+    let parentItemFileMetadata = await ConversationManager.loadParentItemFileMetadata(parentItem);
+
+    const childAttachmentIds = parentItem.getAttachments(false);
+    const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
+    const pdfAttachments = childAttachments.filter(
+      (att) => (att.attachmentContentType === "application/pdf" || att.attachmentContentType === "application/x-pdf") && att.attachmentPath
+    );
+
+    let updated = false;
+
+    const syncPromises = pdfAttachments.map(async (pdf) => {
+      const pdfKey = pdf.key;
+      let fileInfo = parentItemFileMetadata.files.find(
+        (f) => f.zoteroAttachmentKey === pdfKey,
+      );
+
+      let needsUpload = false;
+      if (fileInfo) {
+        Zotero.debug(`Checking status of existing file: ${fileInfo.fileName} (${fileInfo.geminiFileUri})`);
+        // Gemini APIにファイルが存在するかチェック
+        // geminiFileUriからファイル名（files/xxxx）を抽出して渡す
+        const geminiFileName = fileInfo.geminiFileUri.split('/').pop();
+        if (!geminiFileName) {
+            Zotero.logError(new Error(`Could not extract Gemini file name from URI: ${fileInfo.geminiFileUri}`));
+            needsUpload = true;
+        } else {
+            const metadata = await getFileMetadata(`files/${geminiFileName}`); // files/をプレフィックスとして追加
+            if (!metadata) {
+                Zotero.debug(`File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is expired or missing. Re-uploading.`);
+                needsUpload = true;
+            } else {
+                Zotero.debug(`File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is still valid.`);
+            }
+        }
+      } else {
+        Zotero.debug(`No existing file record for PDF: ${pdf.getField('title')}. Uploading.`);
+        needsUpload = true;
+      }
+
+      if (needsUpload) {
+        const pdfPath = pdf.getFilePath();
+        const pdfTitle = pdf.getField("title") as string;
+        if (!pdfPath) {
+            Zotero.logError(new Error(`Could not get file path for PDF: ${pdfTitle}`));
+            return;
+        }
+        try {
+          ui.updateBotMessage(statusMessageDiv, `Uploading ${pdfTitle}...`);
+          const uploadResult = await uploadFile(pdfPath, pdfTitle);
+          
+          if (uploadResult && uploadResult.uri) { // uploadResult.name は不要
+            updated = true;
+
+            const newFileInfo: ParentItemFileMetadataFile = { // ParentItemFileMetadataFile を使用
+              zoteroAttachmentKey: pdfKey,
+              geminiFileUri: uploadResult.uri,
+              fileName: pdfTitle,
+              lastUploadTimestamp: new Date().toISOString(), // タイムスタンプを追加
+            };
+
+            // 既存のファイルを更新または追加
+            parentItemFileMetadata.files = parentItemFileMetadata.files.filter(
+              (f) => f.zoteroAttachmentKey !== pdfKey,
+            );
+            parentItemFileMetadata.files.push(newFileInfo);
+            Zotero.debug(`Successfully uploaded and recorded file: ${pdfTitle}`);
+          } else {
+            throw new Error("Upload result is invalid or missing URI.");
+          }
+
+        } catch (uploadError: any) {
+          Zotero.logError(new Error(`Failed to upload ${pdfTitle}: ${uploadError.message || String(uploadError)}`));
+          ui.updateBotMessage(statusMessageDiv, `Error uploading ${pdfTitle}.`);
+        }
+      }
+    });
+
+    await Promise.all(syncPromises);
+
+    if (updated) {
+      await ConversationManager.saveParentItemFileMetadata(parentItem, parentItemFileMetadata);
+    }
+    
+    ui.updateBotMessage(statusMessageDiv, "PDF sync complete.");
+    setTimeout(() => statusMessageDiv.remove(), 2000);
+
+    Zotero.debug("PDF context synchronization finished.");
+    return parentItemFileMetadata;
   }
 }

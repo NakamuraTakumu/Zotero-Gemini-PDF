@@ -4,6 +4,8 @@
 // @ts-nocheck
 export type FluentMessageId =
   | 'gemini-pdf-context-window-size-label'
+  | 'gemini-pdf-new-chat-button-label'
+  | 'gemini-pdf-reader-new-chat-title'
   | 'gemini-pdf-settings-title'
   | 'gemini-pdf-system-prompt-label'
   | 'item-info-row-example-label'
