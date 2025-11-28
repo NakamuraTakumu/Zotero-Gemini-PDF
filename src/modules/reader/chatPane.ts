@@ -337,9 +337,11 @@ export class ChatPane {
       this.managers.uiManager.updateSessionSwitcher();
       this.managers.uiManager.clearChatInput(); // ここを修正
       this.chatData.parentItemFileMetadata = null;
-      Zotero.debug(
+      Zotero.log(
         `[Gemini PDF] New chat session started with ID: ${newSession.id}`
       );
+      // 新しいセッションがアクティブになったかを確認
+      Zotero.log(`[Gemini PDF] After _handleNewChat, active session ID: ${this.chatSessionManager?.getActiveSession()?.id}`);
     }
   }
 

@@ -51,25 +51,28 @@ export class ChatSessionManager {
       this._sessions = []; // Continue with an empty list on error
     }
 
-    if (this._sessions.length === 0) {
-      // If no sessions exist, create a new default one
-      this._activeSession = await this.createSession("新しいチャット 1", false);
-    } else {
-      // Set the most recent session as active
-      const latestSession = this._sessions.sort((a, b) => {
-        const dateA =
-          a.history.history.length > 0
-            ? new Date(a.history.history[a.history.history.length - 1].timestamp)
-            : new Date(0);
-        const dateB =
-          b.history.history.length > 0
-            ? new Date(b.history.history[b.history.history.length - 1].timestamp)
-            : new Date(0);
-        return dateB.getTime() - dateA.getTime();
-      })[0];
-      this._activeSession = latestSession;
-    }
-
+        if (this._sessions.length === 0) {
+          // If no sessions exist, create a new default one
+          this._activeSession = await this.createSession("新しいチャット 1", false);
+        } else {
+          // 既存のセッションを読み込んだ後、現在アクティブなセッションを維持するか、
+          // なければ最も新しいセッションをアクティブにする
+          if (!this._activeSession || !this._sessions.find(s => s.id === this._activeSession?.id)) {
+            // 現在アクティブなセッションがない、または読み込んだセッションリストに現在のIDがない場合
+            const latestSession = this._sessions.sort((a, b) => {
+              const dateA =
+                a.history.history.length > 0
+                  ? new Date(a.history.history[a.history.history.length - 1].timestamp)
+                  : new Date(0);
+              const dateB =
+                b.history.history.length > 0
+                  ? new Date(b.history.history[b.history.history.length - 1].timestamp)
+                  : new Date(0);
+              return dateB.getTime() - dateA.getTime();
+            })[0];
+            this._activeSession = latestSession;
+          }
+        }
     this.onActiveSessionChange(this._activeSession);
 
     Zotero.debug(
@@ -143,12 +146,16 @@ export class ChatSessionManager {
     this._sessions.push(newSession);
 
     if (setActive) {
+      Zotero.log(`[ChatSessionManager] createSession: Attempting to set active session to: ${newSession.id}`);
       this._activeSession = newSession;
+      Zotero.log(`[ChatSessionManager] createSession: _activeSession after assignment: ${this._activeSession?.id}`);
       this.onActiveSessionChange(newSession);
+      Zotero.log(`[ChatSessionManager] createSession: onActiveSessionChange called for session: ${newSession.id}`);
+      Zotero.log(`[ChatSessionManager] createSession: New session ${newSession.id} set as active.`);
     }
     await newSession.save();
-    Zotero.debug(
-      `[ChatSessionManager] Created new session: ${title} (${newChatId})`
+    Zotero.log(
+      `[ChatSessionManager] Created new session: ${title} (${newChatId}). Current active session: ${this._activeSession?.id}`
     );
     return newSession;
   }

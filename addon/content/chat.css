@@ -297,3 +297,39 @@
 .citation-content {
   /* スタイル不要 */
 }
+
+/* =================================================================
+   【最終手段】KaTeX 強制圧縮パッチ (Table & White-space Hack)
+   ================================================================= */
+
+/* 1. 数式を包んでいる Pタグ を特定し、強制的に「固定幅テーブル」として振る舞わせる */
+/* これにより「中身に合わせて広がる」挙動を物理的に無効化します */
+*|div.message p {
+  display: table !important;        /* ブロックではなくテーブルとして扱う */
+  table-layout: fixed !important;   /* 「中身を見ずに幅を決める」モードにする */
+  width: 100% !important;           /* 親の幅に強制一致させる */
+  
+  /* 【重要】チャット特有の「改行維持(pre-wrap)」をここで解除する */
+  white-space: normal !important;   
+}
+
+/* 2. 数式ブロックの設定 */
+.katex-display {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  
+  /* スクロール設定 */
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  
+  /* 数式の上下余白 */
+  margin: 0.5em 0 !important;
+  padding-bottom: 0.5em !important;
+}
+
+/* 3. KaTeX内部の要素が「超巨大な単語」として突っ張るのを防ぐ */
+.katex-display > .katex {
+  white-space: normal !important;  /* 内部的にも改行ルールをリセット */
+  text-indent: 0 !important;
+}

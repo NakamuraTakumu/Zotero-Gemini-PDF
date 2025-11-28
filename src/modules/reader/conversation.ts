@@ -182,39 +182,21 @@ export class ConversationManager {
       Zotero.debug("Could not determine actualParentItem for conversation.");
       return;
     }
-
         const conversationAttachment =
-
           await ConversationManager.getOrCreateConversationAttachment(
-
             actualParentItem,
-
             conversation, // Pass the conversation object
-
           );
-
         const conversationFilePath = conversationAttachment.getFilePath();
-
-    
-
         if (conversationFilePath) {
-
           const newContent = JSON.stringify(conversation, null, 2);
-
           try {
-
             await Zotero.File.putContentsAsync(conversationFilePath, newContent);
-
           } catch (e: any) {
-
-            Zotero.debug(`Error writing to conversation file: ${e.message || String(e)}`);
-
+            Zotero.log(`Error writing to conversation file: ${e.message || String(e)}`);
           }
-
         } else {
-
           Zotero.logError(new Error(`[ConversationManager] Could not get file path for conversation attachment ${conversationAttachment.key}.`));
-
         }
   }
 
