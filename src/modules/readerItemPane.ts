@@ -36,36 +36,6 @@ export class ReaderItemPaneFactory {
     Zotero.getMainWindow().document.dispatchEvent(event);
   }
 
-  /**
-   * Ensures that the PDF attachments for the current item are synchronized with the Gemini File API.
-   * This is a helper method called before performing actions that require PDF context.
-   * @param {ChatPane} pane The instance of the chat pane.
-   * @returns {Promise<boolean>} A promise that resolves to true if the metadata is present and valid.
-   */
-  static async ensureParentItemFileMetadata(pane: ChatPane): Promise<boolean> {
-    const { zoteroContext, chatData, runtimeState, paneId, managers } = pane;
-    if (!zoteroContext.actualParentItem || !managers.uiManager) {
-      Zotero.logError(new Error("Cannot ensure parentItemFileMetadata: missing actualParentItem or uiManager."));
-      return false;
-    }
-
-    if (!chatData.parentItemFileMetadata) {
-      try {
-        chatData.parentItemFileMetadata = await ConversationManager.synchronizePdfContext(
-          zoteroContext.actualParentItem,
-          { addBotMessage: managers.uiManager.addBotMessage, updateBotMessage: managers.uiManager.updateBotMessage }
-        );
-        return true;
-      } catch (e: any) {
-        Zotero.logError(new Error(`Error synchronizing PDFs: ${e.message || String(e)}`));
-        managers.uiManager.addBotMessage(`Error synchronizing PDFs: ${e.message || String(e)}`, 'error-message');
-        runtimeState.isGeminiRequestInProgress = false; // Reset state on error
-        ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(paneId, false); // Dispatch event on error
-        return false;
-      }
-    }
-    return true;
-  }
 
   /**
    * Registers the main chat pane section with Zotero's ItemPaneManager.

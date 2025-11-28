@@ -29,7 +29,7 @@ pref("__prefsPrefix__.geminiSystemPrompt", `
     :::
 
 * 各パラメータの定義:
-    * {引用元}: [PDF], [PDF p.X], [Web: [サイト名](サイトのURL)] のいずれか。
+    * {引用元}: [PDF], [PDF p.X], [Web: <a href="ページのurl">ページ名</a>] のいずれか。
     * {原文(Raw)}: ソースからコピーしたそのままのテキスト。改行はスペースに置換して1行に収めること。LaTeX装飾は行わないこと。
     * {表示用テキスト(Rendered)}: {原文(raw)}にLaTeX装飾を行い読みやすくしたもの。
 

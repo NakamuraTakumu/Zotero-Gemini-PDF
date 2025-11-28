@@ -4,11 +4,11 @@ import {
 } from "../../types/chat";
 import { ChatSession } from "./chatSession";
 import { ChatSessionManager } from "./chatSessionManager";
-import { ConversationManager } from "./conversation";
 import { UIManager } from "./ui";
 import { ReaderItemPaneFactory } from "../readerItemPane";
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_CHAT_PANEL_HEIGHT } from "../../utils/constants";
+import { PdfFileSyncManager } from "./pdfSyncManager";
 
 /**
  * Manages the state and behavior of a single chat pane in the Zotero reader.
@@ -21,6 +21,7 @@ export class ChatPane {
   public zoteroContext: { itemId?: number; actualParentItem?: Zotero.Item | null; };
   public chatData: { activeSession?: ChatSession | null; parentItemFileMetadata?: ParentItemFileMetadata | null; };
   public runtimeState: { eventHandler: (event: CustomEvent) => void; isGeminiRequestInProgress: boolean; };
+  private pdfFileSyncManager: PdfFileSyncManager;
 
   // Bound event handlers for cleanup
   private _boundHandleLinkClick!: (e: Event) => void;
@@ -38,6 +39,7 @@ export class ChatPane {
       throw new Error("Owner document not found for chat pane body.");
     }
 
+    this.pdfFileSyncManager = new PdfFileSyncManager();
     this.uiElements = { doc, body };
     this.managers = undefined as any;
     this.chatSessionManager = undefined as any;
@@ -192,35 +194,6 @@ export class ChatPane {
     }
   }
 
-  private async _ensurePdfContext(): Promise<boolean> {
-    if (this.chatData.parentItemFileMetadata) {
-      return true;
-    }
-
-    if (!this.zoteroContext.actualParentItem) {
-      Zotero.logError(new Error("Cannot sync PDF context, no parent item."));
-      return false;
-    }
-
-    try {
-      this.chatData.parentItemFileMetadata =
-        await ConversationManager.synchronizePdfContext(
-          this.zoteroContext.actualParentItem,
-          this.managers.uiManager
-        );
-      return true;
-    } catch (e: any) {
-      Zotero.logError(
-        new Error(`Error synchronizing PDFs: ${e.message || String(e)}`)
-      );
-      this.managers.uiManager.addBotMessage(
-        `Error synchronizing PDFs: ${e.message || String(e)}`,
-        "error-message"
-      );
-      return false;
-    }
-  }
-
   private _handleLinkClick(e: Event) {
     const target = e.target as HTMLElement;
     const link = target.closest("a[href]");
@@ -281,7 +254,14 @@ export class ChatPane {
     this.managers.uiManager.setInputsDisabled(true);
     Zotero.log(`[Gemini PDF] _handleSendMessage: Inputs disabled.`);
 
-    if (!await this._ensurePdfContext()) {
+    if (!this.chatData.parentItemFileMetadata) {
+        this.chatData.parentItemFileMetadata = await this.pdfFileSyncManager.ensurePdfContext(
+            this.zoteroContext.actualParentItem,
+            this.managers.uiManager
+        );
+    }
+
+    if (!this.chatData.parentItemFileMetadata) {
       Zotero.log(`[Gemini PDF] _handleSendMessage: PDF context not ensured. Returning.`);
       this.runtimeState.isGeminiRequestInProgress = false;
       ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(this.paneId, false);
