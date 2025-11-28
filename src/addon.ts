@@ -3,7 +3,8 @@ const config = packageJson.config;
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
-import { ChatSessionHistory, ParentItemFileMetadata, ChatPaneState } from "./types/chat";
+import { ChatPane } from "./modules/reader/chatPane";
+import { ChatSessionHistory, ParentItemFileMetadata } from "./types/chat";
 
 class Addon {
   public data: {
@@ -24,7 +25,7 @@ class Addon {
     dialog?: DialogHelper;
     lastSelectedText?: string;
     chatPanes: {
-      [paneId: string]: ChatPaneState;
+      [paneId: string]: ChatPane;
     };
   };
   // Lifecycle hooks
