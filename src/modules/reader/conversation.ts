@@ -77,94 +77,9 @@ export class ConversationManager {
     }
   }
 
-  /**
-   * Loads the conversation from the attachment associated with the parent item.
-   * If no conversation exists, it returns an empty one.
-   */
-  static async loadConversation(parentItem: Zotero.Item): Promise<ChatSessionHistory> {
-    const childAttachments = await Zotero.Items.get(parentItem.getAttachments());
-    let latestConversation: ChatSessionHistory | null = null;
-    let latestModifiedDate = new Date(0); // Epoch
 
-    for (const attachment of childAttachments) {
-      if (
-        (attachment.itemType as string) === "attachment" &&
-        attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
-        attachment.attachmentLinkMode ===
-          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      ) {
-        const conversationFilePath = attachment.getFilePath();
-        if (conversationFilePath) {
-          try {
-            const content = await Zotero.File.getContentsAsync(conversationFilePath);
-            if (typeof content === "string" && content.trim() !== "") {
-              const parsedConversation = JSON.parse(content) as ChatSessionHistory;
-              // Check if this conversation is more recent
-              const attachmentModifiedDate = attachment.dateModified ? new Date(attachment.dateModified) : new Date(0);
-              if (attachmentModifiedDate > latestModifiedDate) {
-                latestConversation = parsedConversation;
-                latestModifiedDate = attachmentModifiedDate;
-              }
-            }
-          } catch (e: any) {
-            Zotero.logError(new Error(`[ConversationManager] Failed to parse conversation JSON from attachment ${attachment.key}: ${e.message || String(e)}`));
-            // Continue to next attachment if parsing fails
-          }
-        }
-      }
-    }
 
-    if (latestConversation) {
-      Zotero.debug(`[ConversationManager] Loaded latest conversation history with length: ${latestConversation.history.length}`);
-      return latestConversation;
-    }
 
-    // 会話が存在しない場合、新しい空の会話を返す
-    const chatId = uuidv4();
-    const chatTitle = "新しいチャット"; // 仮のデフォルトタイトル
-    return {
-      metadata: {
-        zoteroParentItemKey: parentItem.key,
-        chatId: chatId,
-        chatTitle: chatTitle,
-        isTitleGenerated: false,
-      },
-      history: [],
-    };
-  }
-
-  /**
-   * Loads all conversation attachments associated with the parent item.
-   * If no conversation exists, it returns an empty array.
-   */
-  static async getAllConversations(parentItem: Zotero.Item): Promise<ChatSessionHistory[]> {
-    const childAttachments = await Zotero.Items.get(parentItem.getAttachments());
-    const conversations: ChatSessionHistory[] = [];
-
-    for (const attachment of childAttachments) {
-      if (
-        (attachment.itemType as string) === "attachment" &&
-        attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
-        attachment.attachmentLinkMode ===
-          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      ) {
-        const conversationFilePath = attachment.getFilePath();
-        if (conversationFilePath) {
-          try {
-            const content = await Zotero.File.getContentsAsync(conversationFilePath);
-            if (typeof content === "string" && content.trim() !== "") {
-              const parsedConversation = JSON.parse(content) as ChatSessionHistory;
-              conversations.push(parsedConversation);
-            }
-          } catch (e: any) {
-            Zotero.logError(new Error(`[ConversationManager] Failed to parse conversation JSON from attachment ${attachment.key}: ${e.message || String(e)}`));
-            // Continue to next attachment if parsing fails
-          }
-        }
-      }
-    }
-    return conversations;
-  }
 
   /**
    * Saves the current conversation back to its Zotero attachment.
@@ -219,29 +134,7 @@ export class ConversationManager {
     Zotero.debug(`No conversation attachment found for chatId: ${chatId}.`);
   }
 
-  /**
-   * Adds a user message to the conversation history.
-   */
-  static addUserMessage(conversation: ChatSessionHistory, text: string): void {
-    const userMessage: ChatMessage = {
-      timestamp: new Date().toISOString(),
-      role: "user",
-      parts: [{ text: text }],
-    };
-    conversation.history.push(userMessage);
-  }
 
-  /**
-   * Adds a bot message to the conversation history.
-   */
-  static addBotMessage(conversation: ChatSessionHistory, text: string, model: string, groundingMetadata?: any): void {
-    const botMessage: ChatMessage = {
-      timestamp: new Date().toISOString(),
-      role: "model",
-      model: model,
-      parts: [{ text: text || "" }],
-      groundingMetadata: groundingMetadata,
-    };
-    conversation.history.push(botMessage);
-  }
+
+
 }

@@ -1,6 +1,7 @@
 import { ChatSessionHistory } from "../../types/chat";
 import { ConversationManager } from "./conversation";
 import { ChatSession } from "./chatSession";
+import { GEMINI_CHAT_TITLE_PREFIX } from "../../utils/constants";
 
 /**
  * Manages a collection of ChatSession instances for a Zotero item.
@@ -21,29 +22,46 @@ export class ChatSessionManager {
   }
 
   /**
+   * Loads all conversation attachments associated with the parent item,
+   * and returns them as ChatSession instances.
+   */
+  private async _loadAllConversations(): Promise<ChatSession[]> {
+    const childAttachments = await Zotero.Items.get(this.parentItem.getAttachments());
+    const conversations: ChatSession[] = [];
+
+    for (const attachment of childAttachments) {
+      if (
+        (attachment.itemType as string) === "attachment" &&
+        attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
+        attachment.attachmentLinkMode ===
+          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
+      ) {
+        const conversationFilePath = attachment.getFilePath();
+        if (conversationFilePath) {
+          try {
+            const content = await Zotero.File.getContentsAsync(conversationFilePath);
+            if (typeof content === "string" && content.trim() !== "") {
+              const parsedHistory = JSON.parse(content) as ChatSessionHistory;
+              conversations.push(new ChatSession(parsedHistory, this.parentItem));
+            }
+          } catch (e: any) {
+            Zotero.logError(new Error(`[ChatSessionManager] Failed to parse conversation JSON from attachment ${attachment.key}: ${e.message || String(e)}`));
+            // Continue to next attachment if parsing fails
+          }
+        }
+      }
+    }
+    return conversations;
+  }
+
+  /**
    * Loads all chat sessions from storage, initializes them as ChatSession instances,
    * and sets the most recent one as active.
    */
   async init(): Promise<void> {
-    let allHistories: ChatSessionHistory[] = [];
     try {
-      allHistories = await ConversationManager.getAllConversations(
-        this.parentItem
-      );
-      this._sessions = allHistories.map(
-        (history) => new ChatSession(history, this.parentItem)
-      );
-
-      // Trigger title generation for sessions that need it
-      this._sessions.forEach((session) => {
-        if (
-          !session.history.metadata.isTitleGenerated &&
-          session.history.history.length >= 2
-        ) {
-          // Don't await, let it run in the background
-          session.generateTitle();
-        }
-      });
+      this._sessions = await this._loadAllConversations();
+      this._triggerTitleGenerationForAllSessions();
     } catch (e: any) {
       Zotero.logError(
         new Error(`Error loading all conversations: ${e.message || String(e)}`)
@@ -51,33 +69,58 @@ export class ChatSessionManager {
       this._sessions = []; // Continue with an empty list on error
     }
 
-        if (this._sessions.length === 0) {
-          // If no sessions exist, create a new default one
-          this._activeSession = await this.createSession("新しいチャット 1", false);
-        } else {
-          // 既存のセッションを読み込んだ後、現在アクティブなセッションを維持するか、
-          // なければ最も新しいセッションをアクティブにする
-          if (!this._activeSession || !this._sessions.find(s => s.id === this._activeSession?.id)) {
-            // 現在アクティブなセッションがない、または読み込んだセッションリストに現在のIDがない場合
-            const latestSession = this._sessions.sort((a, b) => {
-              const dateA =
-                a.history.history.length > 0
-                  ? new Date(a.history.history[a.history.history.length - 1].timestamp)
-                  : new Date(0);
-              const dateB =
-                b.history.history.length > 0
-                  ? new Date(b.history.history[b.history.history.length - 1].timestamp)
-                  : new Date(0);
-              return dateB.getTime() - dateA.getTime();
-            })[0];
-            this._activeSession = latestSession;
-          }
-        }
+    await this._initializeActiveSession();
+
     this.onActiveSessionChange(this._activeSession);
 
     Zotero.debug(
       `[ChatSessionManager] Initialized with active session: ${this._activeSession?.id}`
     );
+  }
+
+  /**
+   * Iterates through all sessions and triggers title generation for those that need it.
+   */
+  private _triggerTitleGenerationForAllSessions(): void {
+    this._sessions.forEach((session) => {
+      if (
+        !session.history.metadata.isTitleGenerated &&
+        session.history.history.length >= 2
+      ) {
+        // Don't await, let it run in the background
+        session.generateTitle();
+      }
+    });
+  }
+
+  /**
+   * Sets the active session. If no sessions exist, it creates a new one.
+   * If sessions exist but none are active, it activates the most recent one.
+   */
+  private async _initializeActiveSession(): Promise<void> {
+    if (this._sessions.length === 0) {
+      // If no sessions exist, create a new default one
+      this._activeSession = await this.createSession("新しいチャット 1", false);
+    } else {
+      // If an active session is already set and valid, do nothing.
+      if (this._activeSession && this._sessions.find(s => s.id === this._activeSession?.id)) {
+        return;
+      }
+      
+      // Otherwise, find the most recent session and activate it.
+      const latestSession = this._sessions.sort((a, b) => {
+        const dateA =
+          a.history.history.length > 0
+            ? new Date(a.history.history[a.history.history.length - 1].timestamp)
+            : new Date(0);
+        const dateB =
+          b.history.history.length > 0
+            ? new Date(b.history.history[b.history.history.length - 1].timestamp)
+            : new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      })[0];
+      this._activeSession = latestSession;
+    }
   }
 
   /**
