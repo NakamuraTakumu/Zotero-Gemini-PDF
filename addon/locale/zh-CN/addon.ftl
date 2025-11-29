@@ -9,3 +9,4 @@ prefs-table-title = 标题
 prefs-table-detail = 详情
 tabpanel-lib-tab-label = 库标签
 tabpanel-reader-tab-label = 阅读器标签
+gemini-pdf-reader-new-chat-title = 新的聊天

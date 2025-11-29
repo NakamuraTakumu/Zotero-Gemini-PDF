@@ -30,6 +30,7 @@ export interface ChatSessionHistoryMetadata {
   chatId: string;
   chatTitle: string;
   isTitleGenerated: boolean;
+  createdTimestamp: string; // ISO 8601 format
 }
 
 /**
@@ -92,4 +93,3 @@ export interface ConversationHistoryItem {
   parts: { text: string }[];
   groundingMetadata?: any;
 }
-

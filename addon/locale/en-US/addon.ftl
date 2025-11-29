@@ -12,3 +12,4 @@ tabpanel-reader-tab-label = Reader Tab
 gemini-pdf-system-prompt-label = System Prompt:
 gemini-pdf-context-window-size-label = Chat History Limit (messages):
 gemini-pdf-settings-title = Gemini API Settings
+gemini-pdf-reader-new-chat-title = New Chat

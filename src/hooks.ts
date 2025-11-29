@@ -25,8 +25,8 @@ async function onStartup() {
   initLocale();
 
   // Register the observer for item changes
-  Zotero.Notifier.registerObserver(hooks, ['item'], observerID);
-  Zotero.log('GeminiPDFPlugin: Item observer registered.');
+  Zotero.Notifier.registerObserver(hooks, ["item"], observerID);
+  Zotero.log("GeminiPDFPlugin: Item observer registered.");
 
   // Register the reader item pane section
   await ReaderItemPaneFactory.registerReaderItemPaneSection();
@@ -38,7 +38,7 @@ async function onStartup() {
       addon.data.lastSelectedText = event.params.annotation.text?.trim();
       buildReaderPopup(event);
     },
-    addon.data.config.addonID
+    addon.data.config.addonID,
   );
 
   // Register the preference pane
@@ -77,7 +77,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 function onShutdown(): void {
   ztoolkit.unregisterAll();
   Zotero.Notifier.unregisterObserver(observerID); // Unregister the observer
-  Zotero.log('GeminiPDFPlugin: Item observer unregistered.');
+  Zotero.log("GeminiPDFPlugin: Item observer unregistered.");
   // Remove addon object
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed
@@ -95,8 +95,13 @@ async function onPrefsWindowLoad(window: Window): Promise<void> {
  * @param {string[]} ids - An array of IDs of the affected objects.
  * @param {string[]} extraData - Additional data related to the event.
  */
-async function notify(event: string, type: string, ids: (string | number)[], extraData: any) {
-  if (type === 'item') {
+async function notify(
+  event: string,
+  type: string,
+  ids: (string | number)[],
+  extraData: any,
+) {
+  if (type === "item") {
     for (const id of ids) {
       const item = await Zotero.Items.getAsync(id);
 
@@ -106,40 +111,75 @@ async function notify(event: string, type: string, ids: (string | number)[], ext
       }
 
       // Check if the item is our chat history attachment
-      if (Zotero.ItemTypes.getName(item.itemType) === 'attachment' && item.getField('title')?.startsWith(GEMINI_CHAT_TITLE_PREFIX)) {
-        Zotero.log(`[Gemini PDF] Chat history attachment event: ${event} for item ID: ${id}, parent ID: ${item.parentID}`);
+      if (
+        Zotero.ItemTypes.getName(item.itemType) === "attachment" &&
+        item.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX)
+      ) {
+        Zotero.log(
+          `[Gemini PDF] Chat history attachment event: ${event} for item ID: ${id}, parent ID: ${item.parentID}`,
+        );
 
         // Iterate through active chat panes to find the one associated with this parent item
         for (const paneId in addon.data.chatPanes) {
           const paneState = addon.data.chatPanes[paneId];
           if (paneState.zoteroContext.itemId === item.parentID) {
-            Zotero.log(`[Gemini PDF] Reloading conversation for pane ${paneId} due to attachment change.`);
+            Zotero.log(
+              `[Gemini PDF] Reloading conversation for pane ${paneId} due to attachment change.`,
+            );
 
-            const { managers, zoteroContext, chatSessionManager, chatData, uiElements } = paneState;
+            const {
+              managers,
+              zoteroContext,
+              chatSessionManager,
+              chatData,
+              uiElements,
+            } = paneState;
 
-            if (!managers.uiManager || !zoteroContext.actualParentItem || !uiElements.doc || !uiElements.body) {
-                Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: Missing required components.`));
-                continue;
+            if (
+              !managers.uiManager ||
+              !zoteroContext.actualParentItem ||
+              !uiElements.doc ||
+              !uiElements.body
+            ) {
+              Zotero.logError(
+                new Error(
+                  `[Gemini PDF] Cannot reload pane ${paneId}: Missing required components.`,
+                ),
+              );
+              continue;
             }
 
-            const chatMessages = uiElements.body.querySelector("#chat-messages") as HTMLDivElement;
+            const chatMessages = uiElements.body.querySelector(
+              "#chat-messages",
+            ) as HTMLDivElement;
             if (!chatMessages) {
-                Zotero.logError(new Error(`[Gemini PDF] Cannot reload pane ${paneId}: chatMessages element not found.`));
-                continue;
+              Zotero.logError(
+                new Error(
+                  `[Gemini PDF] Cannot reload pane ${paneId}: chatMessages element not found.`,
+                ),
+              );
+              continue;
             }
 
             try {
-                // Reload all sessions and then set the active one
-                await chatSessionManager.init(); // This will reload all sessions and set the active one
-                const reloadedActiveSession = chatSessionManager.getActiveSession();
+              // Reload all sessions and then set the active one
+              await chatSessionManager.init(); // This will reload all sessions and set the active one
+              const reloadedActiveSession =
+                chatSessionManager.getActiveSession();
 
-                paneState.chatData.activeSession = reloadedActiveSession; // Update the pane's active session
-                managers.uiManager.renderChatMessages(reloadedActiveSession);
-                managers.uiManager.updateSessionSwitcher(); // Also update the session switcher
-
+              paneState.chatData.activeSession = reloadedActiveSession; // Update the pane's active session
+              managers.uiManager.renderChatMessages(reloadedActiveSession);
+              managers.uiManager.updateSessionSwitcher(); // Also update the session switcher
             } catch (e: any) {
-                Zotero.logError(new Error(`[Gemini PDF] Error reloading conversation for pane ${paneId}: ${e.message || String(e)}`));
-                managers.uiManager.addBotMessage(`Error reloading conversation: ${e.message || String(e)}`, 'error-message');
+              Zotero.logError(
+                new Error(
+                  `[Gemini PDF] Error reloading conversation for pane ${paneId}: ${e.message || String(e)}`,
+                ),
+              );
+              managers.uiManager.addBotMessage(
+                `Error reloading conversation: ${e.message || String(e)}`,
+                "error-message",
+              );
             }
           }
         }
@@ -162,4 +202,3 @@ const hooks = {
 };
 
 export default hooks;
-

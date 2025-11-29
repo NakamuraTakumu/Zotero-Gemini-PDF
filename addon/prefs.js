@@ -1,5 +1,7 @@
 pref("__prefsPrefix__.geminiApiKey", "");
-pref("__prefsPrefix__.geminiSystemPrompt", `
+pref(
+  "__prefsPrefix__.geminiSystemPrompt",
+  `
 
 あなたは学術論文 PDF の読解と、Web 検索による事実検証を専門とする厳格なリサーチャーです。
 以下のシステムインストラクションを遵守し、対話型のチャット形式でユーザーを支援してください。
@@ -78,13 +80,23 @@ In statistics, the mean squared error (MSE) of an estimator...
 :::
 
 Web 上の一般的な定義（MSE）とも一致しており、特殊な損失関数ではありません。
-`);
+`,
+);
 pref("__prefsPrefix__.contextWindowSize", 32);
-pref("__prefsPrefix__.promptForSelection", "提示されたテキストについて以下の2点を日本語で解説してください。\n\n1.  **一般的な説明**: 概念の定義・背景について、Google検索を用いて正確かつ一般性を意識し解説\n2.  **PDFでの文脈**: このPDFにおける概念の意味と重要性を、その文脈から深く掘り下げて解説。\n\n追加のコメントや余計な内容は含めず、以下の形式で出力してください。\n\n### 一般的な説明\n\n### PDFにおける関連性\n\n---\n\n**選択されたテキスト:**\n{selectedText}");
-pref("__prefsPrefix__.geminiModelList", "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview");
+pref(
+  "__prefsPrefix__.promptForSelection",
+  "提示されたテキストについて以下の2点を日本語で解説してください。\n\n1.  **一般的な説明**: 概念の定義・背景について、Google検索を用いて正確かつ一般性を意識し解説\n2.  **PDFでの文脈**: このPDFにおける概念の意味と重要性を、その文脈から深く掘り下げて解説。\n\n追加のコメントや余計な内容は含めず、以下の形式で出力してください。\n\n### 一般的な説明\n\n### PDFにおける関連性\n\n---\n\n**選択されたテキスト:**\n{selectedText}",
+);
+pref(
+  "__prefsPrefix__.geminiModelList",
+  "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview",
+);
 pref("__prefsPrefix__.geminiSelectedModel", "gemini-2.5-flash-lite");
 pref("__prefsPrefix__.geminiUseGoogleSearch", false);
 pref("__prefsPrefix__.includeThoughts", false);
 pref("__prefsPrefix__.chatPanelHeight", 300);
 pref("__prefsPrefix__.titleGenerationModel", "gemini-2.5-flash");
-pref("__prefsPrefix__.titleGenerationPrompt", "以下の会話のタイトルを5〜10単語程度の日本語で簡潔に生成してください。ただし論文そのものの情報は別で付与するので、その情報は含めなくともよいです。出力はタイトルのみにしてください。\\n\\nユーザー: {userPrompt}\\nアシスタント: {modelResponse}");
+pref(
+  "__prefsPrefix__.titleGenerationPrompt",
+  "以下の会話のタイトルを5〜10単語程度の日本語で簡潔に生成してください。ただし論文そのものの情報は別で付与するので、その情報は含めなくともよいです。出力はタイトルのみにしてください。\\n\\nユーザー: {userPrompt}\\nアシスタント: {modelResponse}",
+);

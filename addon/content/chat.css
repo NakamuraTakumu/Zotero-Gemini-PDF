@@ -165,12 +165,24 @@
   line-height: 1.2;
 }
 
-*|div.message h1 { font-size: 1.8em; }
-*|div.message h2 { font-size: 1.5em; }
-*|div.message h3 { font-size: 1.2em; }
-*|div.message h4 { font-size: 1em; }
-*|div.message h5 { font-size: 0.9em; }
-*|div.message h6 { font-size: 0.8em; }
+*|div.message h1 {
+  font-size: 1.8em;
+}
+*|div.message h2 {
+  font-size: 1.5em;
+}
+*|div.message h3 {
+  font-size: 1.2em;
+}
+*|div.message h4 {
+  font-size: 1em;
+}
+*|div.message h5 {
+  font-size: 0.9em;
+}
+*|div.message h6 {
+  font-size: 0.8em;
+}
 
 *|div.message ul,
 *|div.message ol {
@@ -184,7 +196,9 @@
 }
 
 *|div.message pre {
-  background-color: var(--chat-input-bg); /* Use a slightly different background for code blocks */
+  background-color: var(
+    --chat-input-bg
+  ); /* Use a slightly different background for code blocks */
   border: 1px solid var(--chat-border-color);
   border-radius: 4px;
   padding: 10px;
@@ -305,12 +319,12 @@
 /* 1. 数式を包んでいる Pタグ を特定し、強制的に「固定幅テーブル」として振る舞わせる */
 /* これにより「中身に合わせて広がる」挙動を物理的に無効化します */
 *|div.message p {
-  display: table !important;        /* ブロックではなくテーブルとして扱う */
-  table-layout: fixed !important;   /* 「中身を見ずに幅を決める」モードにする */
-  width: 100% !important;           /* 親の幅に強制一致させる */
-  
+  display: table !important; /* ブロックではなくテーブルとして扱う */
+  table-layout: fixed !important; /* 「中身を見ずに幅を決める」モードにする */
+  width: 100% !important; /* 親の幅に強制一致させる */
+
   /* 【重要】チャット特有の「改行維持(pre-wrap)」をここで解除する */
-  white-space: normal !important;   
+  white-space: normal !important;
 }
 
 /* 2. 数式ブロックの設定 */
@@ -318,11 +332,11 @@
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
-  
+
   /* スクロール設定 */
   overflow-x: auto !important;
   overflow-y: hidden !important;
-  
+
   /* 数式の上下余白 */
   margin: 0.5em 0 !important;
   padding-bottom: 0.5em !important;
@@ -330,6 +344,6 @@
 
 /* 3. KaTeX内部の要素が「超巨大な単語」として突っ張るのを防ぐ */
 .katex-display > .katex {
-  white-space: normal !important;  /* 内部的にも改行ルールをリセット */
+  white-space: normal !important; /* 内部的にも改行ルールをリセット */
   text-indent: 0 !important;
 }

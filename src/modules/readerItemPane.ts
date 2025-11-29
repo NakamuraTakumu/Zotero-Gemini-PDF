@@ -27,15 +27,20 @@ export class ReaderItemPaneFactory {
    * @param {string} paneId The ID of the pane triggering the event.
    * @param {boolean} isRequestInProgress The status of the API request.
    */
-  static dispatchRequestStatusChangedEvent(paneId: string, isRequestInProgress: boolean) {
-    const event = new (Zotero.getMainWindow() as any).CustomEvent('gemini-pdf-request-status-changed', {
-      bubbles: true,
-      cancelable: true,
-      detail: { paneId, isRequestInProgress }
-    });
+  static dispatchRequestStatusChangedEvent(
+    paneId: string,
+    isRequestInProgress: boolean,
+  ) {
+    const event = new (Zotero.getMainWindow() as any).CustomEvent(
+      "gemini-pdf-request-status-changed",
+      {
+        bubbles: true,
+        cancelable: true,
+        detail: { paneId, isRequestInProgress },
+      },
+    );
     Zotero.getMainWindow().document.dispatchEvent(event);
   }
-
 
   /**
    * Registers the main chat pane section with Zotero's ItemPaneManager.
@@ -87,7 +92,9 @@ export class ReaderItemPaneFactory {
           const chatPane = new ChatPane(body as HTMLElement);
           addon.data.chatPanes[chatPane.paneId] = chatPane;
         } catch (e) {
-          Zotero.logError(new Error(`[Gemini PDF] Error initializing pane: ${e}`));
+          Zotero.logError(
+            new Error(`[Gemini PDF] Error initializing pane: ${e}`),
+          );
         }
       },
       onDestroy: ({ body }) => {

@@ -6,7 +6,11 @@ import {
   GenerateContentResponse,
 } from "@google/genai";
 import { getPref } from "../utils/prefs";
-import { PREF_API_KEY, PREF_SELECTED_MODEL, PREF_SYSTEM_PROMPT } from "../utils/constants";
+import {
+  PREF_API_KEY,
+  PREF_SELECTED_MODEL,
+  PREF_SYSTEM_PROMPT,
+} from "../utils/constants";
 
 let ai: GoogleGenAI | null = null;
 
@@ -18,7 +22,7 @@ function getGeminiClient(): GoogleGenAI | null {
   if (typeof apiKey !== "string" || !apiKey) {
     Zotero.logError(
       new Error(
-        "Gemini API Key is not a valid string or is not set. Cannot initialize Gemini model."
+        "Gemini API Key is not a valid string or is not set. Cannot initialize Gemini model.",
       ),
     );
     return null;
@@ -50,7 +54,9 @@ export async function uploadFile(
   const tempFilePath = tempDir.path;
 
   try {
-    Zotero.log(`[Gemini] Starting upload for: ${displayName} from path: ${filePath}`);
+    Zotero.log(
+      `[Gemini] Starting upload for: ${displayName} from path: ${filePath}`,
+    );
     const zoteroFile = Zotero.File.pathToFile(filePath);
     await zoteroFile.copyTo(Zotero.getTempDirectory(), tempFileName);
     Zotero.log(`[Gemini] Copied file to temporary path: ${tempFilePath}`);
@@ -65,10 +71,14 @@ export async function uploadFile(
       const Cc: any = Components.classes;
       const Ci: any = Components.interfaces;
 
-      const fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(Ci.nsIFileInputStream);
+      const fis = Cc["@mozilla.org/network/file-input-stream;1"].createInstance(
+        Ci.nsIFileInputStream,
+      );
       fis.init(file, -1, -1, 0);
 
-      const bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(Ci.nsIBinaryInputStream);
+      const bis = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
+        Ci.nsIBinaryInputStream,
+      );
       bis.setInputStream(fis);
 
       const available = fis.available();
@@ -88,16 +98,26 @@ export async function uploadFile(
     let binaryContent: Uint8Array;
     try {
       binaryContent = readBinaryFile(tempNsIFile);
-      Zotero.log(`[Gemini] Read file using nsIFileInputStream. Length: ${binaryContent.length}`);
+      Zotero.log(
+        `[Gemini] Read file using nsIFileInputStream. Length: ${binaryContent.length}`,
+      );
     } catch (e: any) {
-      Zotero.logError(new Error(`Failed to read binary file with nsIFileInputStream: ${e.message || String(e)}`));
+      Zotero.logError(
+        new Error(
+          `Failed to read binary file with nsIFileInputStream: ${e.message || String(e)}`,
+        ),
+      );
       throw e;
     }
 
-    Zotero.log(`[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`);
+    Zotero.log(
+      `[Gemini] Using content for Blob. Type: ${binaryContent.constructor.name}, Length: ${binaryContent.length}`,
+    );
 
     const pdfBlob = new Blob([binaryContent], { type: "application/pdf" });
-    Zotero.log(`[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`);
+    Zotero.log(
+      `[Gemini] Created PDF Blob. Size: ${pdfBlob.size}, Type: ${pdfBlob.type}`,
+    );
 
     const uploadedFile = await client.files.upload({
       file: pdfBlob,
@@ -108,9 +128,12 @@ export async function uploadFile(
     });
     Zotero.log(`[Gemini] File uploaded: ${uploadedFile.name}`);
     return uploadedFile;
-
   } catch (error: any) {
-    Zotero.logError(new Error(`Error during file upload process for ${displayName}: ${error.message || String(error)}`));
+    Zotero.logError(
+      new Error(
+        `Error during file upload process for ${displayName}: ${error.message || String(error)}`,
+      ),
+    );
     throw error;
   } finally {
     try {
@@ -121,7 +144,9 @@ export async function uploadFile(
       }
     } catch (cleanupError: any) {
       Zotero.logError(
-        new Error(`Failed to clean up temporary file ${tempFilePath}: ${cleanupError.message || String(cleanupError)}`),
+        new Error(
+          `Failed to clean up temporary file ${tempFilePath}: ${cleanupError.message || String(cleanupError)}`,
+        ),
       );
     }
   }
@@ -142,7 +167,9 @@ export async function getFileMetadata(
     Zotero.log(`File metadata found for ${fileName}`);
     return file;
   } catch (error: any) {
-    Zotero.log(`File not found or expired for ${fileName}. Error: ${error.message || String(error)}`);
+    Zotero.log(
+      `File not found or expired for ${fileName}. Error: ${error.message || String(error)}`,
+    );
     return null;
   }
 }
@@ -156,15 +183,20 @@ export async function sendMessageToGemini(
   includeThoughts: boolean, // Add this
   tools?: any[],
   modelName?: string,
-): Promise<{ thoughts: string[]; responseText: string | null; groundingMetadata?: any }> {
+): Promise<{
+  thoughts: string[];
+  responseText: string | null;
+  groundingMetadata?: any;
+}> {
   const selectedModel = modelName || (getPref(PREF_SELECTED_MODEL) as string);
   Zotero.debug(`[Gemini PDF] API: Using model from getPref: ${selectedModel}`);
   const client = getGeminiClient();
   if (!client) {
     return {
       thoughts: [],
-      responseText: "Error: Gemini model not initialized. Please set your API key in preferences.",
-      groundingMetadata: undefined
+      responseText:
+        "Error: Gemini model not initialized. Please set your API key in preferences.",
+      groundingMetadata: undefined,
     };
   }
 
@@ -174,29 +206,36 @@ export async function sendMessageToGemini(
       { role: "user", parts: userParts },
     ];
 
-    const systemInstructionText = getPref(PREF_SYSTEM_PROMPT) as string | undefined;
+    const systemInstructionText = getPref(PREF_SYSTEM_PROMPT) as
+      | string
+      | undefined;
 
     const requestBody: any = {
-        model: selectedModel,
-        contents: fullConversation,
-        config: {
-            tools: tools,
-        },
+      model: selectedModel,
+      contents: fullConversation,
+      config: {
+        tools: tools,
+      },
     };
 
     if (includeThoughts) {
-        requestBody.config.thinkingConfig = { includeThoughts: true };
+      requestBody.config.thinkingConfig = { includeThoughts: true };
     }
 
     if (systemInstructionText) {
-        requestBody.config.systemInstruction = systemInstructionText;
+      requestBody.config.systemInstruction = systemInstructionText;
     }
-    
-    Zotero.log(`[Gemini] Full API Request: ${JSON.stringify(requestBody, null, 2)}`);
 
-    const result: GenerateContentResponse = await client.models.generateContent(requestBody);
+    Zotero.log(
+      `[Gemini] Full API Request: ${JSON.stringify(requestBody, null, 2)}`,
+    );
 
-    Zotero.log(`[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`);
+    const result: GenerateContentResponse =
+      await client.models.generateContent(requestBody);
+
+    Zotero.log(
+      `[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`,
+    );
 
     const thoughts: string[] = [];
     let responseText: string | null = null;
@@ -205,7 +244,11 @@ export async function sendMessageToGemini(
     if (result.candidates && result.candidates.length > 0) {
       const candidate = result.candidates[0];
 
-      if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+      if (
+        candidate.content &&
+        candidate.content.parts &&
+        candidate.content.parts.length > 0
+      ) {
         const responsePartTexts: string[] = [];
         for (const part of candidate.content.parts) {
           if (part.thought) {
@@ -216,42 +259,52 @@ export async function sendMessageToGemini(
             responsePartTexts.push("（非テキストパートを受信しました）");
           }
         }
-        responseText = responsePartTexts.join('\n');
+        responseText = responsePartTexts.join("\n");
       }
 
       if (candidate.groundingMetadata) {
         groundingMetadata = candidate.groundingMetadata;
-        Zotero.log(`[Gemini] Grounding metadata found: ${JSON.stringify(groundingMetadata)}`);
+        Zotero.log(
+          `[Gemini] Grounding metadata found: ${JSON.stringify(groundingMetadata)}`,
+        );
       }
     }
 
-    if (typeof responseText !== 'string' || responseText === null) {
-        let errorReason = "Unknown error.";
-        if (result.promptFeedback?.blockReason) {
-            errorReason = `Prompt was blocked. Reason: ${result.promptFeedback.blockReason}.`;
-        } else if (result.candidates?.[0]?.finishReason && result.candidates[0].finishReason !== 'STOP') {
-            errorReason = `Response was stopped. Reason: ${result.candidates[0].finishReason}.`;
-        } else {
-            errorReason = "The model returned an empty response or a response in an unexpected format.";
-        }
+    if (typeof responseText !== "string" || responseText === null) {
+      let errorReason = "Unknown error.";
+      if (result.promptFeedback?.blockReason) {
+        errorReason = `Prompt was blocked. Reason: ${result.promptFeedback.blockReason}.`;
+      } else if (
+        result.candidates?.[0]?.finishReason &&
+        result.candidates[0].finishReason !== "STOP"
+      ) {
+        errorReason = `Response was stopped. Reason: ${result.candidates[0].finishReason}.`;
+      } else {
+        errorReason =
+          "The model returned an empty response or a response in an unexpected format.";
+      }
 
-        Zotero.logError(new Error(`No text part found in Gemini response. ${errorReason}`));
-        return {
-          thoughts: [],
-          responseText: `Error: Did not receive a valid response from Gemini. ${errorReason}`,
-          groundingMetadata: undefined
-        };
+      Zotero.logError(
+        new Error(`No text part found in Gemini response. ${errorReason}`),
+      );
+      return {
+        thoughts: [],
+        responseText: `Error: Did not receive a valid response from Gemini. ${errorReason}`,
+        groundingMetadata: undefined,
+      };
     }
     Zotero.log(`[Gemini] Raw response from API: ${responseText}`);
     return { thoughts, responseText, groundingMetadata };
   } catch (error: any) {
     Zotero.logError(
-      new Error(`Error sending message to Gemini: ${error.message || String(error)}`),
+      new Error(
+        `Error sending message to Gemini: ${error.message || String(error)}`,
+      ),
     );
     return {
       thoughts: [],
       responseText: `Error: Could not get response from Gemini. ${error.message || String(error)}`,
-      groundingMetadata: undefined
+      groundingMetadata: undefined,
     };
   }
 }

@@ -33,17 +33,17 @@ This JSON attachment (e.g., named `Gemini File Metadata - [ParentItemKey].json`)
 
 ### Field Descriptions (Parent Item File Metadata)
 
-*   `zoteroParentItemKey` (String):
-    *   **Description:** The unique identifier (`itemKey`) of the Zotero parent item. This serves as the primary link for all Gemini-related attachments.
-    *   **Example:** `"PARENT_XYZ"`
+- `zoteroParentItemKey` (String):
+  - **Description:** The unique identifier (`itemKey`) of the Zotero parent item. This serves as the primary link for all Gemini-related attachments.
+  - **Example:** `"PARENT_XYZ"`
 
-*   `files` (Array of Objects):
-    *   **Description:** An array containing metadata for each PDF attachment associated with the `zoteroParentItemKey` that has been processed or is intended for use with the Gemini API.
-    *   **Object Structure:**
-        *   `zoteroAttachmentKey` (String): The unique `itemKey` of the Zotero PDF attachment.
-        *   `geminiFileUri` (String): The resource name (`file.uri`) for the corresponding file in the Gemini File API.
-        *   `fileName` (String): The original filename of the attachment, useful for display purposes.
-        *   `lastUploadTimestamp` (String, ISO 8601 format): The timestamp indicating when this specific PDF file was last successfully uploaded or its presence in the Gemini File API was verified. This helps manage file lifecycle and potential expiration.
+- `files` (Array of Objects):
+  - **Description:** An array containing metadata for each PDF attachment associated with the `zoteroParentItemKey` that has been processed or is intended for use with the Gemini API.
+  - **Object Structure:**
+    - `zoteroAttachmentKey` (String): The unique `itemKey` of the Zotero PDF attachment.
+    - `geminiFileUri` (String): The resource name (`file.uri`) for the corresponding file in the Gemini File API.
+    - `fileName` (String): The original filename of the attachment, useful for display purposes.
+    - `lastUploadTimestamp` (String, ISO 8601 format): The timestamp indicating when this specific PDF file was last successfully uploaded or its presence in the Gemini File API was verified. This helps manage file lifecycle and potential expiration.
 
 ## 2. Chat Session History Format
 
@@ -62,7 +62,9 @@ Each individual chat session (e.g., named `Gemini Chat - [chatTitle].json`) is s
     {
       "timestamp": "2025-11-18T11:01:05Z",
       "role": "user",
-      "parts": [{ "text": "この論文と補足資料の内容を比較して要約してください。" }]
+      "parts": [
+        { "text": "この論文と補足資料の内容を比較して要約してください。" }
+      ]
     },
     {
       "timestamp": "2025-11-18T11:01:15Z",
@@ -76,17 +78,17 @@ Each individual chat session (e.g., named `Gemini Chat - [chatTitle].json`) is s
 
 ### Field Descriptions (Chat Session History)
 
-*   `metadata` (Object):
-    *   **Description:** Contains information specific to this individual chat session.
-    *   **Object Structure:**
-        *   `zoteroParentItemKey` (String): The unique identifier (`itemKey`) of the Zotero parent item. This links the chat session to its parent and, indirectly, to the Parent Item File Metadata for its associated PDFs.
-        *   `chatId` (String): A unique identifier for this specific chat session. This distinguishes it from other chat sessions attached to the same `zoteroParentItemKey`. A UUID is recommended.
-        *   `chatTitle` (String): A user-friendly title for this chat session, allowing for easier identification within the Zotero interface. If not provided by the user, a default title (e.g., based on creation timestamp) should be used.
+- `metadata` (Object):
+  - **Description:** Contains information specific to this individual chat session.
+  - **Object Structure:**
+    - `zoteroParentItemKey` (String): The unique identifier (`itemKey`) of the Zotero parent item. This links the chat session to its parent and, indirectly, to the Parent Item File Metadata for its associated PDFs.
+    - `chatId` (String): A unique identifier for this specific chat session. This distinguishes it from other chat sessions attached to the same `zoteroParentItemKey`. A UUID is recommended.
+    - `chatTitle` (String): A user-friendly title for this chat session, allowing for easier identification within the Zotero interface. If not provided by the user, a default title (e.g., based on creation timestamp) should be used.
 
-*   `history` (Array of Objects):
-    *   **Description:** An ordered list of message entries, representing the turn-by-turn conversation for this chat session. All PDFs associated with the `zoteroParentItemKey` (as defined in the Parent Item File Metadata) are considered active context for this chat.
-    *   **Object Structure:**
-        *   `timestamp` (String, ISO 8601 format): The timestamp of when the message was sent or received.
-        *   `role` (String): The sender of the message (`"user"` or `"model"`).
-        *   `model` (String, Optional): The name of the Gemini model that generated the response (only for `role: "model"`).
-        *   `parts` (Array of Objects): The content of the message, typically `[{ "text": "..." }]`.
+- `history` (Array of Objects):
+  - **Description:** An ordered list of message entries, representing the turn-by-turn conversation for this chat session. All PDFs associated with the `zoteroParentItemKey` (as defined in the Parent Item File Metadata) are considered active context for this chat.
+  - **Object Structure:**
+    - `timestamp` (String, ISO 8601 format): The timestamp of when the message was sent or received.
+    - `role` (String): The sender of the message (`"user"` or `"model"`).
+    - `model` (String, Optional): The name of the Gemini model that generated the response (only for `role: "model"`).
+    - `parts` (Array of Objects): The content of the message, typically `[{ "text": "..." }]`.

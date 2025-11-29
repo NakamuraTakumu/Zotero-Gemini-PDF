@@ -3,7 +3,10 @@ import { createZToolkit } from "../utils/ztoolkit";
 import { getPref, setPref } from "../utils/prefs";
 import { config } from "../../package.json";
 import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
-import { PREF_PROMPT_FOR_SELECTION, PREF_USE_GOOGLE_SEARCH } from "../utils/constants";
+import {
+  PREF_PROMPT_FOR_SELECTION,
+  PREF_USE_GOOGLE_SEARCH,
+} from "../utils/constants";
 
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
@@ -15,7 +18,11 @@ export function buildReaderPopup(
   // Determine the actual parent item's ID for this reader instance
   let actualParentItemId: number | undefined;
   const currentReaderItem = (reader as any)._item;
-  if (currentReaderItem && currentReaderItem.isAttachment() && currentReaderItem.parentID) {
+  if (
+    currentReaderItem &&
+    currentReaderItem.isAttachment() &&
+    currentReaderItem.parentID
+  ) {
     actualParentItemId = currentReaderItem.parentID;
   } else if (currentReaderItem) {
     actualParentItemId = currentReaderItem.id;
@@ -26,9 +33,14 @@ export function buildReaderPopup(
   let currentPaneId: string | undefined;
   if (actualParentItemId) {
     currentPaneId = Object.keys(addon.data.chatPanes).find(
-      (id) => addon.data.chatPanes[id].zoteroContext.itemId === actualParentItemId
+      (id) =>
+        addon.data.chatPanes[id].zoteroContext.itemId === actualParentItemId,
     );
-    if (currentPaneId && addon.data.chatPanes[currentPaneId]?.runtimeState.isGeminiRequestInProgress) {
+    if (
+      currentPaneId &&
+      addon.data.chatPanes[currentPaneId]?.runtimeState
+        .isGeminiRequestInProgress
+    ) {
       initialRequestInProgress = true;
     }
   }
@@ -59,10 +71,18 @@ export function buildReaderPopup(
 
           // Check if a request is already in progress for this item again
           const currentPaneIdCheck = Object.keys(addon.data.chatPanes).find(
-            (id) => addon.data.chatPanes[id].zoteroContext.itemId === actualParentItemId
+            (id) =>
+              addon.data.chatPanes[id].zoteroContext.itemId ===
+              actualParentItemId,
           );
-          if (currentPaneIdCheck && addon.data.chatPanes[currentPaneIdCheck]?.runtimeState.isGeminiRequestInProgress) {
-            Zotero.debug(`[Gemini PDF] Request already in progress for item ${actualParentItemId}. Skipping.`);
+          if (
+            currentPaneIdCheck &&
+            addon.data.chatPanes[currentPaneIdCheck]?.runtimeState
+              .isGeminiRequestInProgress
+          ) {
+            Zotero.debug(
+              `[Gemini PDF] Request already in progress for item ${actualParentItemId}. Skipping.`,
+            );
             return;
           }
 
@@ -78,26 +98,38 @@ export function buildReaderPopup(
           targetButton.innerHTML = `思考中...`;
 
           const promptTemplate = getPref(PREF_PROMPT_FOR_SELECTION) || "";
-          const fullPrompt = promptTemplate.replace("{selectedText}", selectedText);
-          const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? '...' : ''}"*`;
+          const fullPrompt = promptTemplate.replace(
+            "{selectedText}",
+            selectedText,
+          );
+          const summaryText = `*Regarding the question: "${selectedText.substring(0, 100)}${selectedText.length > 100 ? "..." : ""}"*`;
 
           if (!actualParentItemId) {
-              Zotero.logError(new Error(`[${config.addonName}] Could not determine actualParentItemId for selected text action.`));
-              return;
+            Zotero.logError(
+              new Error(
+                `[${config.addonName}] Could not determine actualParentItemId for selected text action.`,
+              ),
+            );
+            return;
           }
 
-          Zotero.log(`[Gemini PDF] Dispatching gemini-pdf-action for itemId: ${actualParentItemId}`);
-          const actionEvent = new (Zotero.getMainWindow() as any).CustomEvent('gemini-pdf-action', {
-            bubbles: true,
-            cancelable: true,
-            detail: {
-              itemId: actualParentItemId,
-              fullPrompt,
-              summaryText,
-              popupTriggerButton: targetButton,
-              originalButtonText: originalButtonText,
-            }
-          });
+          Zotero.log(
+            `[Gemini PDF] Dispatching gemini-pdf-action for itemId: ${actualParentItemId}`,
+          );
+          const actionEvent = new (Zotero.getMainWindow() as any).CustomEvent(
+            "gemini-pdf-action",
+            {
+              bubbles: true,
+              cancelable: true,
+              detail: {
+                itemId: actualParentItemId,
+                fullPrompt,
+                summaryText,
+                popupTriggerButton: targetButton,
+                originalButtonText: originalButtonText,
+              },
+            },
+          );
           Zotero.getMainWindow().document.dispatchEvent(actionEvent);
         },
       },
@@ -108,17 +140,17 @@ export function buildReaderPopup(
           if (!btn.disabled) {
             btn.style.backgroundColor = "#357ae8";
           }
-        }
+        },
       },
       {
         type: "mouseout",
         listener: (e: MouseEvent) => {
-            const btn = e.currentTarget as HTMLButtonElement;
-            if (!btn.disabled) {
-                btn.style.backgroundColor = "#4285f4";
-            }
-        }
-      }
+          const btn = e.currentTarget as HTMLButtonElement;
+          if (!btn.disabled) {
+            btn.style.backgroundColor = "#4285f4";
+          }
+        },
+      },
     ],
   });
 
@@ -141,7 +173,10 @@ export function buildReaderPopup(
     }
   };
 
-  Zotero.getMainWindow().document.addEventListener('gemini-pdf-request-status-changed', requestStatusChangeListener);
+  Zotero.getMainWindow().document.addEventListener(
+    "gemini-pdf-request-status-changed",
+    requestStatusChangeListener,
+  );
 
   // Note: MutationObserver causes TypeError in some Zotero environments.
   // For now, we will rely on garbage collection for the button element itself

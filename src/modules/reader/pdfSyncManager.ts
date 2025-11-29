@@ -31,7 +31,7 @@ export class PdfFileSyncManager {
    */
   public async ensurePdfContext(
     parentItem: Zotero.Item,
-    uiManager: UIManager
+    uiManager: UIManager,
   ): Promise<ParentItemFileMetadata | null> {
     if (!parentItem) {
       Zotero.logError(new Error("Cannot sync PDF context, no parent item."));
@@ -49,7 +49,7 @@ export class PdfFileSyncManager {
     try {
       this.parentItemFileMetadata = await this._synchronizePdfAttachments(
         parentItem,
-        uiManager
+        uiManager,
       );
       return this.parentItemFileMetadata;
     } catch (e: any) {
@@ -57,7 +57,7 @@ export class PdfFileSyncManager {
       Zotero.logError(new Error(`Error synchronizing PDFs: ${errorMessage}`));
       uiManager.addBotMessage(
         `Error synchronizing PDFs: ${errorMessage}`,
-        "error-message"
+        "error-message",
       );
       return null;
     }
@@ -70,15 +70,15 @@ export class PdfFileSyncManager {
    */
   private async _synchronizePdfAttachments(
     parentItem: Zotero.Item,
-    ui: UIManager
+    ui: UIManager,
   ): Promise<ParentItemFileMetadata> {
     Zotero.debug("Starting PDF context synchronization...");
     const statusMessageDiv = ui.addBotMessage(
       "Syncing PDFs...",
-      "sync-message"
+      "sync-message",
     );
 
-    let metadata = await this._loadParentItemFileMetadata(parentItem);
+    const metadata = await this._loadParentItemFileMetadata(parentItem);
 
     const childAttachmentIds = parentItem.getAttachments(false);
     const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
@@ -86,46 +86,48 @@ export class PdfFileSyncManager {
       (att) =>
         (att.attachmentContentType === "application/pdf" ||
           att.attachmentContentType === "application/x-pdf") &&
-        att.attachmentPath
+        att.attachmentPath,
     );
 
     let updated = false;
 
     const syncPromises = pdfAttachments.map(async (pdf) => {
       const pdfKey = pdf.key;
-      let fileInfo = metadata.files.find(
-        (f) => f.zoteroAttachmentKey === pdfKey
+      const fileInfo = metadata.files.find(
+        (f) => f.zoteroAttachmentKey === pdfKey,
       );
 
       let needsUpload = false;
       if (fileInfo) {
         Zotero.debug(
-          `Checking status of existing file: ${fileInfo.fileName} (${fileInfo.geminiFileUri})`
+          `Checking status of existing file: ${fileInfo.fileName} (${fileInfo.geminiFileUri})`,
         );
         const geminiFileName = fileInfo.geminiFileUri.split("/").pop();
         if (!geminiFileName) {
           Zotero.logError(
             new Error(
-              `Could not extract Gemini file name from URI: ${fileInfo.geminiFileUri}`
-            )
+              `Could not extract Gemini file name from URI: ${fileInfo.geminiFileUri}`,
+            ),
           );
-needsUpload = true;
+          needsUpload = true;
         } else {
-          const fileApiMetadata = await getFileMetadata(`files/${geminiFileName}`);
+          const fileApiMetadata = await getFileMetadata(
+            `files/${geminiFileName}`,
+          );
           if (!fileApiMetadata) {
             Zotero.debug(
-              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is expired or missing. Re-uploading.`
+              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is expired or missing. Re-uploading.`,
             );
             needsUpload = true;
           } else {
             Zotero.debug(
-              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is still valid.`
+              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is still valid.`,
             );
           }
         }
       } else {
         Zotero.debug(
-          `No existing file record for PDF: ${pdf.getField("title")}. Uploading.`
+          `No existing file record for PDF: ${pdf.getField("title")}. Uploading.`,
         );
         needsUpload = true;
       }
@@ -135,7 +137,7 @@ needsUpload = true;
         const pdfTitle = pdf.getField("title") as string;
         if (!pdfPath) {
           Zotero.logError(
-            new Error(`Could not get file path for PDF: ${pdfTitle}`)
+            new Error(`Could not get file path for PDF: ${pdfTitle}`),
           );
           return;
         }
@@ -154,10 +156,12 @@ needsUpload = true;
             };
 
             metadata.files = metadata.files.filter(
-              (f) => f.zoteroAttachmentKey !== pdfKey
+              (f) => f.zoteroAttachmentKey !== pdfKey,
             );
             metadata.files.push(newFileInfo);
-            Zotero.debug(`Successfully uploaded and recorded file: ${pdfTitle}`);
+            Zotero.debug(
+              `Successfully uploaded and recorded file: ${pdfTitle}`,
+            );
           } else {
             throw new Error("Upload result is invalid or missing URI.");
           }
@@ -166,8 +170,8 @@ needsUpload = true;
             new Error(
               `Failed to upload ${pdfTitle}: ${
                 uploadError.message || String(uploadError)
-              }`
-            )
+              }`,
+            ),
           );
           ui.updateBotMessage(statusMessageDiv, `Error uploading ${pdfTitle}.`);
         }
@@ -191,10 +195,10 @@ needsUpload = true;
    * Loads the ParentItemFileMetadata from the attachment associated with the parent item.
    */
   private async _loadParentItemFileMetadata(
-    parentItem: Zotero.Item
+    parentItem: Zotero.Item,
   ): Promise<ParentItemFileMetadata> {
     const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments()
+      parentItem.getAttachments(),
     );
     const attachmentTitle = `${PARENT_ITEM_FILE_METADATA_TITLE_PREFIX}${parentItem.key}`;
     const existingAttachment = childAttachments.find((att) => {
@@ -218,8 +222,8 @@ needsUpload = true;
               new Error(
                 `Failed to parse ParentItemFileMetadata JSON: ${
                   e.message || String(e)
-                }`
-              )
+                }`,
+              ),
             );
           }
         }
@@ -237,11 +241,11 @@ needsUpload = true;
    */
   private async _saveParentItemFileMetadata(
     parentItem: Zotero.Item,
-    metadata: ParentItemFileMetadata
+    metadata: ParentItemFileMetadata,
   ) {
     if (!parentItem) {
       Zotero.debug(
-        "Could not determine parentItem for ParentItemFileMetadata."
+        "Could not determine parentItem for ParentItemFileMetadata.",
       );
       return;
     }
@@ -258,7 +262,7 @@ needsUpload = true;
         Zotero.debug(
           `Error writing to ParentItemFileMetadata file: ${
             e.message || String(e)
-          }`
+          }`,
         );
       }
     }
@@ -268,10 +272,10 @@ needsUpload = true;
    * Finds an existing ParentItemFileMetadata attachment or creates a new one if it doesn't exist.
    */
   private async _getOrCreateParentItemFileMetadataAttachment(
-    parentItem: Zotero.Item
+    parentItem: Zotero.Item,
   ): Promise<Zotero.Item> {
     const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments()
+      parentItem.getAttachments(),
     );
     const attachmentTitle = `${PARENT_ITEM_FILE_METADATA_TITLE_PREFIX}${parentItem.key}`;
 
@@ -285,14 +289,14 @@ needsUpload = true;
           Zotero.Attachments.LINK_MODE_IMPORTED_FILE
       ) {
         Zotero.debug(
-          `Found existing ParentItemFileMetadata attachment for ${parentItem.key}.`
+          `Found existing ParentItemFileMetadata attachment for ${parentItem.key}.`,
         );
         return attachment;
       }
     }
 
     Zotero.debug(
-      `Creating new ParentItemFileMetadata attachment for ${parentItem.key}.`
+      `Creating new ParentItemFileMetadata attachment for ${parentItem.key}.`,
     );
 
     const initialMetadata: ParentItemFileMetadata = {
@@ -319,7 +323,7 @@ needsUpload = true;
       });
 
       Zotero.debug(
-        `Successfully created new ParentItemFileMetadata attachment with key ${newAttachment.key}`
+        `Successfully created new ParentItemFileMetadata attachment with key ${newAttachment.key}`,
       );
       return newAttachment;
     } catch (e: any) {
@@ -327,8 +331,8 @@ needsUpload = true;
         new Error(
           `Error creating ParentItemFileMetadata attachment from temp file: ${
             e.message || String(e)
-          }`
-        )
+          }`,
+        ),
       );
       throw e;
     } finally {
@@ -343,8 +347,8 @@ needsUpload = true;
           new Error(
             `Failed to clean up temporary file ${tempFilePath}: ${
               cleanupError.message || String(cleanupError)
-            }`
-          )
+            }`,
+          ),
         );
       }
     }

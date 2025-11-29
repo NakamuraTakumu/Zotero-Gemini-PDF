@@ -1,0 +1,1 @@
+gemini-pdf-reader-new-chat-title = 無題のチャット

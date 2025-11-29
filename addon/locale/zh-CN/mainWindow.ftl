@@ -9,6 +9,4 @@ item-section-example2-sidenav-tooltip =
 item-section-example2-button-tooltip =
     .tooltiptext = 移除此面板
 item-info-row-example-label = 示例行
-gemini-pdf-reader-new-chat-title = 无题聊天
-gemini-pdf-new-chat-button-label = 新建聊天
 
