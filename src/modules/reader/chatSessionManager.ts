@@ -1,5 +1,4 @@
 import { ChatSessionHistory } from "../../types/chat";
-import { ConversationManager } from "./conversation";
 import { ChatSession } from "./chatSession";
 import { GEMINI_CHAT_TITLE_PREFIX } from "../../utils/constants";
 
@@ -12,19 +11,19 @@ export class ChatSessionManager {
   private _sessions: ChatSession[] = [];
   private _activeSession: ChatSession | null = null;
 
-  private onActiveSessionChange: (session: ChatSession | null) => void;
-  private onSessionsListChange: (sessions: ChatSession[]) => void;
+  private rerenderChatMessages: (session: ChatSession | null) => void;
+  private rerenderSwitcher: () => void;
 
   constructor(
     parentItem: Zotero.Item,
     callbacks: {
-      onActiveSessionChange: (session: ChatSession | null) => void;
-      onSessionsListChange: (sessions: ChatSession[]) => void;
+      rerenderChatMessages: (session: ChatSession | null) => void;
+      rerenderSwitcher: () => void;
     },
   ) {
     this.parentItem = parentItem;
-    this.onActiveSessionChange = callbacks.onActiveSessionChange;
-    this.onSessionsListChange = callbacks.onSessionsListChange;
+    this.rerenderChatMessages = callbacks.rerenderChatMessages;
+    this.rerenderSwitcher = callbacks.rerenderSwitcher;
   }
 
   /**
@@ -56,11 +55,11 @@ export class ChatSessionManager {
               Zotero.log(`[Gemini PDF] _loadAllConversations: Attempting to parse JSON from: ${conversationFilePath}`);
               Zotero.log(`[Gemini PDF] _loadAllConversations: Content snippet (first 100 chars): ${content.substring(0, 100)}...`);
               const parsedHistory = JSON.parse(content) as ChatSessionHistory;
-              conversations.push(
-                new ChatSession(parsedHistory, this.parentItem, () =>
-                  this.onSessionsListChange(this._sessions),
-                ),
+              const newSession = new ChatSession(parsedHistory, this.parentItem, () =>
+                this.rerenderSwitcher(),
               );
+              await newSession.init(); // ここでinit()を呼び出す
+              conversations.push(newSession);
               Zotero.log(`[Gemini PDF] _loadAllConversations: Successfully loaded session with ID: ${parsedHistory.metadata.chatId}, Title: "${parsedHistory.metadata.chatTitle}"`);
             }
           } catch (e: any) {
@@ -94,7 +93,9 @@ export class ChatSessionManager {
 
         await this._initializeActiveSession();
 
-        this.onActiveSessionChange(this._activeSession);
+    if (this._activeSession) {
+      this.switchSession(this._activeSession.id);
+    }
 
     Zotero.debug(
       `[ChatSessionManager] Initialized with active session: ${this._activeSession?.id}`,
@@ -117,7 +118,7 @@ export class ChatSessionManager {
 
     Promise.all(promises).then((results) => {
       if (results.some((titleChanged) => titleChanged)) {
-        this.onSessionsListChange(this._sessions);
+        this.rerenderSwitcher();
       }
     });
   }
@@ -125,7 +126,7 @@ export class ChatSessionManager {
   private async _initializeActiveSession(): Promise<void> {
     if (this._sessions.length === 0) {
       // If no sessions exist, create a new default one
-      this._activeSession = await this.createSession(false);
+      this._activeSession = await this.createSession();
     } else {
       // Otherwise, find the most recent session and activate it.
       const latestSession = this._sessions.sort((a, b) => {
@@ -145,7 +146,8 @@ export class ChatSessionManager {
     const sessionToActivate = this.getSessionById(chatId);
     if (sessionToActivate) {
       this._activeSession = sessionToActivate;
-      this.onActiveSessionChange(this._activeSession);
+      this.rerenderChatMessages(this._activeSession);
+      this.rerenderSwitcher();
       Zotero.debug(
         `[ChatSessionManager] Switched active session to: ${chatId}`,
       );
@@ -186,16 +188,13 @@ export class ChatSessionManager {
    * Creates a new chat session, saves it, and sets it as the active session.
    * @param setActive Whether to set the new session as active.
    */
-  async createSession(setActive: boolean = true): Promise<ChatSession> {
-    const newSession = ChatSession.createNew(this.parentItem, () => this.onSessionsListChange(this._sessions));
+  async createSession(): Promise<ChatSession> {
+    const newSession = ChatSession.createNew(this.parentItem, () => this.rerenderSwitcher());
     await newSession.init();
-    await newSession.save(); // ファイルへの保存のみ行い、インメモリリストには直接追加しない
+    await newSession.save();
+    this._sessions.push(newSession); // 新しく作成されたセッションをインメモリリストに追加
 
-    // 新しいセッションをアクティブにする意図が明示されている場合、ここでアクティブセッションを設定
-    if (setActive) {
-      this._activeSession = newSession;
-      this.onActiveSessionChange(newSession);
-    }
+
     return newSession;
   }
 
@@ -213,26 +212,21 @@ export class ChatSessionManager {
     const chatIdToDelete = this._activeSession.id;
 
     try {
-      await ConversationManager.deleteConversation(
-        this.parentItem,
-        chatIdToDelete,
+      await this._activeSession.delete();
+      this._sessions = this._sessions.filter(
+        (session) => session.id !== chatIdToDelete
       );
-      // this._sessions = this._sessions.filter( // ファイルイベントでロードされるため削除
-      //   (session) => session.id !== chatIdToDelete
-      // );
-      // this.onSessionsListChange(this._sessions); // 上記削除に伴い不要
       Zotero.debug(
         `[ChatSessionManager] Deleted session with ID: ${chatIdToDelete}`,
       );
 
-      // アクティブセッションの切り替えも、ファイルイベント経由のリロードに任せる
-      // if (this._sessions.length > 0) {
-      //   this._activeSession = this._sessions[0]; // Activate the first one
-      // } else {
-      //   this._activeSession = await this.createSession(false);
-      // }
-
-      // this.onActiveSessionChange(this._activeSession); // 上記削除に伴い不要
+      let newActiveSession: ChatSession;
+      if (this._sessions.length > 0) {
+        newActiveSession = this._sessions[0]; // Activate the first one
+      } else {
+        newActiveSession = await this.createSession();
+      }
+      this.switchSession(newActiveSession.id);
       return true;
     } catch (e: any) {
       Zotero.logError(

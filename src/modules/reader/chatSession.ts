@@ -85,6 +85,12 @@ export class ChatSession {
     if (this._history.metadata.chatTitle !== newTitle) {
       this._history.metadata.chatTitle = newTitle;
       this._history.metadata.isTitleGenerated = true;
+      if (this._attachment) {
+        // Construct the new attachment title by prepending the prefix
+        const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${newTitle}`;
+        this._attachment.setField('title', newAttachmentTitle);
+        void this._attachment.saveTx();
+      }
       if (this.onTitleChangeCallback) {
         this.onTitleChangeCallback();
       }
@@ -185,6 +191,33 @@ export class ChatSession {
           `[ChatSession] Could not get file path for conversation attachment ${this._attachment.key}.`,
         ),
       );
+    }
+  }
+
+  /**
+   * Deletes the chat session's attachment from Zotero.
+   */
+  public async delete(): Promise<void> {
+    if (!this._attachment) {
+      Zotero.logError(
+        new Error("ChatSession attachment not initialized. Cannot delete."),
+      );
+      return;
+    }
+
+    try {
+      this._attachment.deleted = true;
+      await this._attachment.saveTx();
+      Zotero.debug(
+        `Successfully deleted conversation attachment for chatId: ${this.id}`,
+      );
+    } catch (e: any) {
+      Zotero.logError(
+        new Error(
+          `Error deleting conversation attachment ${this._attachment.key}: ${e.message || String(e)}`,
+        ),
+      );
+      throw e;
     }
   }
 

@@ -19,10 +19,7 @@ export class ChatPane {
     itemId?: number;
     actualParentItem?: Zotero.Item | null;
   };
-  public chatData: {
-    activeSession?: ChatSession | null;
-    parentItemFileMetadata?: ParentItemFileMetadata | null;
-  };
+  private parentItemFileMetadata: ParentItemFileMetadata | null;
   public runtimeState: {
     eventHandler: (event: CustomEvent) => void;
     isGeminiRequestInProgress: boolean;
@@ -50,10 +47,7 @@ export class ChatPane {
     this.managers = undefined as any;
     this.chatSessionManager = undefined as any;
     this.zoteroContext = { itemId: undefined, actualParentItem: null };
-    this.chatData = {
-      activeSession: null,
-      parentItemFileMetadata: null,
-    };
+    this.parentItemFileMetadata = null;
 
     const eventHandler = (event: Event) =>
       this._handleGeminiAction(event as CustomEvent);
@@ -69,6 +63,7 @@ export class ChatPane {
   }
 
   public async render(item: Zotero.Item) {
+    Zotero.log(`[Gemini PDF] ChatPane.render called for item: ${item.id}`);
     const actualParentItem: Zotero.Item | null =
       item.isAttachment() && item.parentID
         ? await Zotero.Items.getAsync(item.parentID)
@@ -90,6 +85,7 @@ export class ChatPane {
   }
 
   private async _initializeManagers(actualParentItem: Zotero.Item | null) {
+    Zotero.log(`[Gemini PDF] ChatPane._initializeManagers called.`);
     if (!actualParentItem) {
       Zotero.logError(
         new Error("Cannot initialize managers, no parent item found."),
@@ -101,19 +97,15 @@ export class ChatPane {
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
 
     const chatSessionManager = new ChatSessionManager(actualParentItem, {
-      onActiveSessionChange: (session: ChatSession | null) => {
-        // onActiveSessionChange
-        this.chatData.activeSession = session;
+      rerenderChatMessages: (session: ChatSession | null) => {
         if (this.managers) {
           this.managers.uiManager.renderChatMessages(session);
         }
       },
-      onSessionsListChange: (sessions: ChatSession[]) => {
-        Zotero.log(
-          `[Gemini PDF] ChatPane: onSessionsListChange received. Session IDs: ${sessions.map((s) => s.id).join(", ")}`,
-        );
+      rerenderSwitcher: () => {
         if (this.managers) {
-          this.managers.uiManager.updateSessionSwitcher();
+          this.managers.uiManager.renderSessionSwitcherList();
+          this.managers.uiManager.updateSessionSwitcherSelection();
         }
       },
     });
@@ -141,6 +133,7 @@ export class ChatPane {
   }
 
   private _setupEventListeners() {
+    Zotero.log(`[Gemini PDF] ChatPane._setupEventListeners called.`);
     const { body } = this.uiElements;
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
     const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
@@ -149,6 +142,12 @@ export class ChatPane {
     const newChatButton = body.querySelector(
       "#new-chat-button",
     ) as HTMLButtonElement;
+
+    if (newChatButton) {
+      Zotero.log(`[Gemini PDF] _setupEventListeners: newChatButton found.`);
+    } else {
+      Zotero.logError(new Error(`[Gemini PDF] _setupEventListeners: newChatButton not found!`));
+    }
 
     if (
       !chatMessages ||
@@ -163,15 +162,9 @@ export class ChatPane {
       return;
     }
 
-    // Bind handlers and store them for later removal
+    // Bind all event handlers
     this._boundHandleLinkClick = this._handleLinkClick.bind(this);
-    // this._boundHandleSendMessage = this._handleSendMessage.bind(this); // もはや使用されないため削除
-    this._boundHandleEnterKey = this._handleEnterKey.bind(this);
-    this._boundHandleNewChat = this._handleNewChat.bind(this);
-    this._boundHandleResize = this._handleResize.bind(this);
-
-    chatMessages.addEventListener("click", this._boundHandleLinkClick);
-    sendButton.addEventListener("click", () => {
+    this._boundHandleSendMessage = (async () => {
       const chatInput = this.uiElements.body.querySelector(
         "#chat-input",
       ) as HTMLTextAreaElement;
@@ -180,15 +173,21 @@ export class ChatPane {
 
       this._handleSendMessage(messageText, messageText);
       this.managers.uiManager.clearChatInput(); // 送信後にクリア
-    });
+    }).bind(this);
+    this._boundHandleEnterKey = this._handleEnterKey.bind(this);
+    this._boundHandleNewChat = this._handleNewChat.bind(this);
+    this._boundHandleResize = this._handleResize.bind(this);
+
+    // Add all event listeners
+    sendButton.addEventListener("click", this._boundHandleSendMessage);
     chatInput.addEventListener("keydown", this._boundHandleEnterKey);
     newChatButton.addEventListener("click", this._boundHandleNewChat);
     chatResizer.addEventListener("mousedown", this._boundHandleResize);
+    chatMessages.addEventListener("click", this._boundHandleLinkClick);
   }
 
   private _loadConversation() {
     const activeSession = this.chatSessionManager.getActiveSession();
-    this.chatData.activeSession = activeSession;
     if (activeSession) {
       this.managers.uiManager.renderChatMessages(activeSession);
     } else {
@@ -295,15 +294,15 @@ export class ChatPane {
     this.managers.uiManager.setInputsDisabled(true);
     Zotero.log(`[Gemini PDF] _handleSendMessage: Inputs disabled.`);
 
-    if (!this.chatData.parentItemFileMetadata) {
-      this.chatData.parentItemFileMetadata =
+    if (!this.parentItemFileMetadata) {
+      this.parentItemFileMetadata =
         await this.pdfFileSyncManager.ensurePdfContext(
           this.zoteroContext.actualParentItem,
           this.managers.uiManager,
         );
     }
 
-    if (!this.chatData.parentItemFileMetadata) {
+    if (!this.parentItemFileMetadata) {
       Zotero.log(
         `[Gemini PDF] _handleSendMessage: PDF context not ensured. Returning.`,
       );
@@ -339,7 +338,7 @@ export class ChatPane {
     );
 
     try {
-      if (!this.chatData.parentItemFileMetadata) {
+      if (!this.parentItemFileMetadata) {
         Zotero.logError(new Error("PDF metadata is not available after sync."));
         throw new Error("PDF metadata is not available after sync.");
       }
@@ -350,7 +349,7 @@ export class ChatPane {
       const { responseText, thoughts, groundingMetadata } =
         await activeSession.sendMessage(
           promptText,
-          this.chatData.parentItemFileMetadata,
+          this.parentItemFileMetadata,
         );
       Zotero.log(
         `[Gemini PDF] _handleSendMessage: Received response from active session. responseText length: ${responseText?.length}`,
@@ -390,17 +389,18 @@ export class ChatPane {
   }
 
   private async _handleNewChat() {
-    const newSession = await this.chatSessionManager?.createSession();
+    Zotero.log(`[Gemini PDF] _handleNewChat: New chat button clicked.`);
+    const newSession = await this.chatSessionManager.createSession();
     if (newSession) {
-      this.managers.uiManager.clearChatInput(); // ここを修正
-      this.chatData.parentItemFileMetadata = null;
+      Zotero.log(`[Gemini PDF] _handleNewChat: New session created with ID: ${newSession.id}`);
+      this.managers.uiManager.clearChatInput();
+      this.parentItemFileMetadata = null;
+      this.chatSessionManager.switchSession(newSession.id); // UI updates are triggered by this
       Zotero.log(
-        `[Gemini PDF] New chat session started with ID: ${newSession.id}`,
+        `[Gemini PDF] After _handleNewChat, active session ID: ${this.chatSessionManager.getActiveSession()?.id}`,
       );
-      // 新しいセッションがアクティブになったかを確認
-      Zotero.log(
-        `[Gemini PDF] After _handleNewChat, active session ID: ${this.chatSessionManager?.getActiveSession()?.id}`,
-      );
+    } else {
+      Zotero.logError(new Error("[Gemini PDF] _handleNewChat: Failed to create new session."));
     }
   }
 

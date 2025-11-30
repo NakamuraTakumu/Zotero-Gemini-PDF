@@ -4,7 +4,7 @@ import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
 import { ChatPane } from "./modules/reader/chatPane";
-import { ChatSessionHistory, ParentItemFileMetadata } from "./types/chat";
+import { ParentItemFileMetadata } from "./types/chat";
 
 class Addon {
   public data: {

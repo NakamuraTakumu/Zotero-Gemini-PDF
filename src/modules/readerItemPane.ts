@@ -7,8 +7,8 @@ import {
   PREF_CONTEXT_WINDOW_SIZE,
   PREF_CHAT_PANEL_HEIGHT,
 } from "../utils/constants";
-import { ChatSessionHistory, ParentItemFileMetadata } from "../types/chat";
-import { ConversationManager } from "./reader/conversation";
+import { ParentItemFileMetadata } from "../types/chat";
+
 
 import { UIManager } from "./reader/ui";
 import { ChatSessionManager } from "./reader/chatSessionManager"; // ChatSessionManager をインポート

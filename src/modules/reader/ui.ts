@@ -5,7 +5,7 @@ import {
   PREF_USE_GOOGLE_SEARCH,
   PREF_INCLUDE_THOUGHTS,
 } from "../../utils/constants";
-import { ChatSessionHistory } from "../../types/chat";
+
 import { ChatSessionManager } from "./chatSessionManager";
 import { ChatSession } from "./chatSession";
 import MarkdownIt from "markdown-it";
@@ -288,7 +288,8 @@ export class UIManager {
     ) as HTMLSelectElement;
     if (!sessionSwitcher) return;
 
-    this.updateSessionSwitcher(); // Populate with initial data
+    this.renderSessionSwitcherList();
+    this.updateSessionSwitcherSelection();
 
     sessionSwitcher.onchange = (e) => {
       const newSessionId = (e.target as HTMLSelectElement).value;
@@ -298,14 +299,12 @@ export class UIManager {
     };
   }
 
-  updateSessionSwitcher() {
+  renderSessionSwitcherList() {
     const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
     if (!sessionSwitcher) return;
     
     const sessions = this.chatSessionManager.getAllSessions();
-    const activeSession = this.chatSessionManager.getActiveSession();
-
-    Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcher: Called. Active Session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`);
+    Zotero.log(`[Gemini PDF] UIManager.renderSessionSwitcherList: Rendering ${sessions.length} sessions.`);
 
     sessionSwitcher.innerHTML = "";
 
@@ -314,14 +313,17 @@ export class UIManager {
       option.value = session.id;
       option.textContent = session.title;
       sessionSwitcher.appendChild(option);
-      Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcher: Added option for Session ID: ${session.id}, Title: "${session.title}"`);
     });
+  }
 
+  updateSessionSwitcherSelection() {
+    const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
+    if (!sessionSwitcher) return;
+
+    const activeSession = this.chatSessionManager.getActiveSession();
     if (activeSession) {
       sessionSwitcher.value = activeSession.id;
-      Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcher: Set sessionSwitcher.value to: ${sessionSwitcher.value}`);
-    } else {
-      Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcher: No active session to set.`);
+      Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcherSelection: Selected session ID: ${activeSession.id}`);
     }
   }
 
