@@ -40,6 +40,7 @@
 }
 *|div.chat-messages {
   overflow-y: auto;
+  overscroll-behavior-y: contain; /* Prevent scrolling parent element */
   max-height: 200px; /* Initial limited height */
   padding: 10px;
   border: 1px solid var(--chat-border-color);
@@ -310,6 +311,22 @@
 
 .citation-content {
   /* スタイル不要 */
+}
+
+/* カスタムcitationポップアップのスタイル */
+.citation-popup {
+  position: fixed;
+  background-color: var(--chat-bg);
+  border: 1px solid var(--chat-border-color);
+  padding: 8px;
+  border-radius: 4px;
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+  z-index: 1000; /* 他の要素より手前に表示 */
+  white-space: pre-wrap; /* テキストの改行を保持 */
+  max-width: 400px; /* 最大幅を設定 */
+  pointer-events: none; /* ポップアップがマウスイベントをブロックしないようにする */
+  user-select: text; /* テキスト選択を可能にする */
+  color: var(--chat-text-color);
 }
 
 /* =================================================================

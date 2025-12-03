@@ -35,9 +35,11 @@ const initMarkdownRenderer = (window: Window) => {
           const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
           if (m) {
             const source = md.renderInline(m[1].trim());
-            const originalQuote = md.utils.escapeHtml(m[2].trim());
+            const originalSourceText = m[1].trim(); // {引用元}の部分
+            const originalRawText = m[2].trim(); // {原文(Raw)}の部分
+            const originalQuote = md.utils.escapeHtml(originalRawText); // {原文(Raw)}をHTMLエスケープ済み
             return (
-              `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
+              `<div class="citation-container" data-original-quote="${originalQuote}">\n` + // title属性にoriginalQuoteを設定
               `<div class="citation-source">${source}</div>\n` +
               `<div class="citation-content">\n`
             );
@@ -142,6 +144,7 @@ export class UIManager {
   private prefObserverKeys: symbol[] = [];
   private chatSessionManager: ChatSessionManager;
   public renderMarkdown: (text: string) => string;
+  private citationPopup: HTMLDivElement; // 追加
 
   constructor(
     doc: Document,
@@ -156,6 +159,15 @@ export class UIManager {
     this.chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
     this.sendButton = body.querySelector("#send-button") as HTMLButtonElement;
     this.renderMarkdown = initMarkdownRenderer(doc.defaultView as Window);
+
+    // citationPopupの初期化
+    this.citationPopup = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div",
+    ) as HTMLDivElement;
+    this.citationPopup.className = "citation-popup";
+    this.citationPopup.style.display = "none";
+    this.body.appendChild(this.citationPopup);
   }
 
   registerPrefObservers() {
@@ -402,117 +414,162 @@ export class UIManager {
         }
       }
       messageDiv.innerHTML = messageHtml;
-      this.chatMessages.appendChild(messageDiv);
-      this._attachMiddleClickHandler(messageDiv as HTMLElement);
-    }
-    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-  }
-
-  addUserMessage(text: string): void {
-    const userMessageDiv = this.doc.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "div",
-    );
-    userMessageDiv.className = "message user-message";
-    userMessageDiv.innerHTML = this.renderMarkdown(text);
-    this.chatMessages.appendChild(userMessageDiv);
-    this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
-    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-  }
-
-  addBotMessage = (
-    html: string,
-    className: string = "bot-message",
-  ): HTMLDivElement => {
-    const div = this.doc.createElementNS(
-      "http://www.w3.org/1999/xhtml",
-      "div",
-    ) as HTMLDivElement;
-    div.className = `message ${className}`;
-    div.innerHTML = html;
-    this.chatMessages.appendChild(div);
-    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-    return div;
-  };
-
-  updateBotMessage = (
-    element: HTMLDivElement,
-    responseText: string,
-    thoughts?: string[],
-    groundingMetadata?: any,
-  ) => {
-    let messageHtml = this.renderMarkdown(responseText || "No response.");
-
-    if (thoughts && thoughts.length > 0) {
-      const thoughtsHtml = thoughts
-        .flatMap(t => t.split('\n')) // Split multi-line thoughts into an array of single lines
-        .filter(line => line.trim() !== '') // Remove any empty lines
-        .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
-        .join("");
-      messageHtml =
-        `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` +
-        messageHtml;
-    }
-
-    if (groundingMetadata) {
-      let sources = "";
-      if (
-        groundingMetadata.groundingChunks &&
-        groundingMetadata.groundingChunks.length > 0
-      ) {
-        sources = groundingMetadata.groundingChunks
-          .map((chunk: any, index: number) => {
-            if (chunk.web) {
-              return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+          this.chatMessages.appendChild(messageDiv);
+          this._attachMiddleClickHandler(messageDiv as HTMLElement);
+          this._attachCitationPopupListeners(messageDiv as HTMLElement); // 追加
+          }
+          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        }
+      
+        addUserMessage(text: string): void {
+          const userMessageDiv = this.doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "div",
+          );
+          userMessageDiv.className = "message user-message";
+          userMessageDiv.innerHTML = this.renderMarkdown(text);
+          this.chatMessages.appendChild(userMessageDiv);
+          this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
+          this._attachCitationPopupListeners(userMessageDiv as HTMLElement); // 追加
+          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        }
+      
+        addBotMessage = (
+          html: string,
+          className: string = "bot-message",
+        ): HTMLDivElement => {
+          const div = this.doc.createElementNS(
+            "http://www.w3.org/1999/xhtml",
+            "div",
+          ) as HTMLDivElement;
+          div.className = `message ${className}`;
+          div.innerHTML = html;
+          this.chatMessages.appendChild(div);
+          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+          return div;
+        };
+      
+        updateBotMessage = (
+          element: HTMLDivElement,
+          responseText: string,
+          thoughts?: string[],
+          groundingMetadata?: any,
+        ) => {
+          let messageHtml = this.renderMarkdown(responseText || "No response.");
+      
+          if (thoughts && thoughts.length > 0) {
+            const thoughtsHtml = thoughts
+              .flatMap(t => t.split('\n')) // Split multi-line thoughts into an array of single lines
+              .filter(line => line.trim() !== '') // Remove any empty lines
+              .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
+              .join("");
+            messageHtml =
+              `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` +
+              messageHtml;
+          }
+      
+          if (groundingMetadata) {
+            let sources = "";
+            if (
+              groundingMetadata.groundingChunks &&
+              groundingMetadata.groundingChunks.length > 0
+            ) {
+              sources = groundingMetadata.groundingChunks
+                .map((chunk: any, index: number) => {
+                  if (chunk.web) {
+                    return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
+                  }
+                  return null;
+                })
+                .filter(Boolean)
+                .join("");
+            } else if (
+              groundingMetadata.retrievedReferences &&
+              groundingMetadata.retrievedReferences.length > 0
+            ) {
+              sources = groundingMetadata.retrievedReferences
+                .map(
+                  (ref: any, index: number) =>
+                    `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`,
+                )
+                .join("");
             }
-            return null;
-          })
-          .filter(Boolean)
-          .join("");
-      } else if (
-        groundingMetadata.retrievedReferences &&
-        groundingMetadata.retrievedReferences.length > 0
-      ) {
-        sources = groundingMetadata.retrievedReferences
-          .map(
-            (ref: any, index: number) =>
-              `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`,
-          )
-          .join("");
+      
+            if (sources) {
+              messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+            }
+          }
+          element.innerHTML = messageHtml;
+          this._attachMiddleClickHandler(element as HTMLElement);
+          this._attachCitationPopupListeners(element as HTMLElement); // 追加
+          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+        };
+      
+        setInputsDisabled(disabled: boolean): void {
+          this.chatInput.disabled = disabled;
+          this.sendButton.disabled = disabled;
+        }
+      
+        clearChatInput(): void {
+          this.chatInput.value = "";
+          this.chatInput.focus();
+        }
+      
+        /**
+         * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
+         */
+        private _attachMiddleClickHandler(messageElement: HTMLElement): void {
+          messageElement.addEventListener('mouseup', (event: MouseEvent) => {
+            if (event.button === 1) { // Middle mouse button
+              event.preventDefault();
+              event.stopPropagation();
+              const detailsElements = messageElement.querySelectorAll('details');
+              let anyClosed = false;
+              detailsElements.forEach((details: HTMLDetailsElement) => {
+                if (!details.open) {
+                  anyClosed = true;
+                }
+              });
+      
+              detailsElements.forEach((details: HTMLDetailsElement) => {
+                if (anyClosed) {
+                  details.open = true; // 閉じているものがあれば全て開く
+                } else {
+                  details.open = false; // 全て開いていれば全て閉じる
+                }
+              });
+            }
+          });
+        }
+      
+        /**
+         * Attaches mouse event listeners to citation containers within a message element
+         * to display a custom popup with the original raw text.
+         */
+        private _attachCitationPopupListeners(messageElement: HTMLElement): void {
+          const citationContainers = messageElement.querySelectorAll('.citation-container');
+          citationContainers.forEach((container: Element) => {
+            container.addEventListener('mouseenter', (event: MouseEvent) => {
+              const originalQuote = (container as HTMLElement).dataset.originalQuote;
+              if (originalQuote) {
+                this.citationPopup.textContent = originalQuote;
+                this.citationPopup.style.left = `${event.clientX + 10}px`; // カーソルから少しずらす
+                this.citationPopup.style.top = `${event.clientY + 10}px`;
+                this.citationPopup.style.display = 'block';
+              }
+            });
+      
+            container.addEventListener('mouseleave', () => {
+              this.citationPopup.style.display = 'none';
+            });
+      
+            // マウスが動いてもポップアップ位置を追従させる
+            container.addEventListener('mousemove', (event: MouseEvent) => {
+              if (this.citationPopup.style.display === 'block') {
+                this.citationPopup.style.left = `${event.clientX + 10}px`;
+                this.citationPopup.style.top = `${event.clientY + 10}px`;
+              }
+            });
+          });
+        }
       }
-
-      if (sources) {
-        messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
-      }
-    }
-    element.innerHTML = messageHtml;
-    this._attachMiddleClickHandler(element as HTMLElement);
-    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-  };
-
-  setInputsDisabled(disabled: boolean): void {
-    this.chatInput.disabled = disabled;
-    this.sendButton.disabled = disabled;
-  }
-
-  clearChatInput(): void {
-    this.chatInput.value = "";
-    this.chatInput.focus();
-  }
-
-  /**
-   * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
-   */
-  private _attachMiddleClickHandler(messageElement: HTMLElement): void {
-    messageElement.addEventListener('mouseup', (event: MouseEvent) => {
-      if (event.button === 1) { // Middle mouse button
-        event.preventDefault();
-        event.stopPropagation();
-        const detailsElements = messageElement.querySelectorAll('details');
-        detailsElements.forEach((details: HTMLDetailsElement) => {
-          details.open = !details.open;
-        });
-      }
-    });
-  }
-}

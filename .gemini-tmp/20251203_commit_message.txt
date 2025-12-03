@@ -1,0 +1,10 @@
+feat: Enhance chat UX and citation display
+
+- Fix: Prevent chat panel scroll from affecting parent itemPane
+  - Applied `overscroll-behavior-y: contain;` to `.chat-messages` in `addon/content/chat.css`.
+- Feat: Improve middle-click behavior for details elements
+  - Modified `_attachMiddleClickHandler` in `src/modules/reader/ui.ts` to open all details if any are closed, or close all if all are open.
+- Feat: Implement copyable custom popup for citation raw text
+  - Removed `title` attribute from `citation-container` in `src/modules/reader/ui.ts`.
+  - Added dynamic custom popup logic to `UIManager` in `src/modules/reader/ui.ts` to display `{原文(Raw)}` on `citation-container` hover.
+  - Added `.citation-popup` styles to `addon/content/chat.css` for proper display and text selection.
