@@ -5,6 +5,7 @@ import hooks from "./hooks";
 import { createZToolkit } from "./utils/ztoolkit";
 import { ChatPane } from "./modules/reader/chatPane";
 import { ParentItemFileMetadata } from "./types/chat";
+import GlobalChatManager from "./modules/globalChatManager"; // Import GlobalChatManager
 
 class Addon {
   public data: {
@@ -24,9 +25,7 @@ class Addon {
     };
     dialog?: DialogHelper;
     lastSelectedText?: string;
-    chatPanes: {
-      [paneId: string]: ChatPane;
-    };
+    globalChatManager?: GlobalChatManager; // Add globalChatManager property
   };
   // Lifecycle hooks
   public hooks: typeof hooks;
@@ -40,7 +39,7 @@ class Addon {
       env: __env__,
       initialized: false,
       ztoolkit: createZToolkit(),
-      chatPanes: {},
+      globalChatManager: GlobalChatManager.getInstance(), // Initialize GlobalChatManager
     };
     this.hooks = hooks;
     this.api = {};

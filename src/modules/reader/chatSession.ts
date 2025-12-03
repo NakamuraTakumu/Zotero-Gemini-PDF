@@ -27,17 +27,13 @@ export class ChatSession {
   private _history: ChatSessionHistory;
   private _parentItem: Zotero.Item;
   private _attachment!: Zotero.Item; // Initialized in init()
-  private onTitleChangeCallback: (() => void) | null;
 
   /**
    * Creates a new ChatSession instance for a new chat.
    * @param parentItem The Zotero parent item.
    * @returns A new ChatSession instance.
    */
-  public static createNew(
-    parentItem: Zotero.Item,
-    onTitleChange: (() => void) | null = null,
-  ): ChatSession {
+  public static createNew(parentItem: Zotero.Item): ChatSession {
     const newHistory: ChatSessionHistory = {
       metadata: {
         zoteroParentItemKey: parentItem.key,
@@ -48,17 +44,12 @@ export class ChatSession {
       },
       history: [],
     };
-    return new ChatSession(newHistory, parentItem, onTitleChange);
+    return new ChatSession(newHistory, parentItem);
   }
 
-  constructor(
-    history: ChatSessionHistory,
-    parentItem: Zotero.Item,
-    onTitleChange: (() => void) | null = null,
-  ) {
+  constructor(history: ChatSessionHistory, parentItem: Zotero.Item) {
     this._history = history;
     this._parentItem = parentItem;
-    this.onTitleChangeCallback = onTitleChange;
   }
 
   /**
@@ -85,15 +76,22 @@ export class ChatSession {
     if (this._history.metadata.chatTitle !== newTitle) {
       this._history.metadata.chatTitle = newTitle;
       this._history.metadata.isTitleGenerated = true;
-      if (this._attachment) {
-        // Construct the new attachment title by prepending the prefix
-        const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${newTitle}`;
-        this._attachment.setField('title', newAttachmentTitle);
-        void this._attachment.saveTx();
-      }
-      if (this.onTitleChangeCallback) {
-        this.onTitleChangeCallback();
-      }
+    }
+  }
+
+  /**
+   * Updates the attachment's title based on the current session title and saves it.
+   */
+  private async _updateAttachmentTitle(): Promise<void> {
+    if (!this._attachment) {
+      Zotero.logError(new Error("ChatSession attachment not initialized. Cannot update attachment title."));
+      return;
+    }
+    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${this.title}`;
+    if (this._attachment.getField('title') !== newAttachmentTitle) {
+      this._attachment.setField('title', newAttachmentTitle);
+      await this._attachment.saveTx();
+      Zotero.debug(`[ChatSession] Attachment title updated to "${newAttachmentTitle}"`);
     }
   }
   /**
@@ -290,6 +288,7 @@ export class ChatSession {
           .trim()
           .replace(/^「|」$/g, "")
           .replace(/\.$/, "");
+        await this._updateAttachmentTitle(); // Update attachment title metadata
         await this.save();
         return true;
       }

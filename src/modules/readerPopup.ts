@@ -1,12 +1,14 @@
 // gemini-pdf/src/modules/readerPopup.ts
 import { createZToolkit } from "../utils/ztoolkit";
-import { getPref, setPref } from "../utils/prefs";
+import { getPref } from "../utils/prefs";
 import { config } from "../../package.json";
 import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
 import {
   PREF_PROMPT_FOR_SELECTION,
   PREF_USE_GOOGLE_SEARCH,
 } from "../utils/constants";
+import { ReaderItemPaneFactory } from "./readerItemPane"; // Import ReaderItemPaneFactory
+import { ChatPane } from "./reader/chatPane"; // Import ChatPane
 
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
@@ -28,22 +30,17 @@ export function buildReaderPopup(
     actualParentItemId = currentReaderItem.id;
   }
 
-  // Get initial request state for this item's pane
+  // Initial state is not in progress. The listener will update it.
   let initialRequestInProgress = false;
   let currentPaneId: string | undefined;
-  if (actualParentItemId) {
-    currentPaneId = Object.keys(addon.data.chatPanes).find(
-      (id) =>
-        addon.data.chatPanes[id].zoteroContext.itemId === actualParentItemId,
-    );
-    if (
-      currentPaneId &&
-      addon.data.chatPanes[currentPaneId]?.runtimeState
-        .isGeminiRequestInProgress
-    ) {
-      initialRequestInProgress = true;
+
+  // Find the pane associated with the current Zotero item
+  ReaderItemPaneFactory.getChatPanes().forEach((chatPane: ChatPane) => {
+    if (chatPane.zoteroContext.itemId === actualParentItemId) {
+      currentPaneId = chatPane.paneId;
+      initialRequestInProgress = chatPane.runtimeState.isGeminiRequestInProgress;
     }
-  }
+  });
 
   const button = ztoolkit.UI.createElement(doc, "button", {
     namespace: "html",
@@ -70,16 +67,8 @@ export function buildReaderPopup(
           e.stopPropagation();
 
           // Check if a request is already in progress for this item again
-          const currentPaneIdCheck = Object.keys(addon.data.chatPanes).find(
-            (id) =>
-              addon.data.chatPanes[id].zoteroContext.itemId ===
-              actualParentItemId,
-          );
-          if (
-            currentPaneIdCheck &&
-            addon.data.chatPanes[currentPaneIdCheck]?.runtimeState
-              .isGeminiRequestInProgress
-          ) {
+          // Now rely on the current state after event listeners have updated
+          if (button.disabled) {
             Zotero.debug(
               `[Gemini PDF] Request already in progress for item ${actualParentItemId}. Skipping.`,
             );

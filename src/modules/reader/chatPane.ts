@@ -6,6 +6,7 @@ import { ReaderItemPaneFactory } from "../readerItemPane";
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_CHAT_PANEL_HEIGHT } from "../../utils/constants";
 import { PdfFileSyncManager } from "./pdfSyncManager";
+import GlobalChatManager from "../globalChatManager"; // Import GlobalChatManager
 
 /**
  * Manages the state and behavior of a single chat pane in the Zotero reader.
@@ -69,13 +70,14 @@ export class ChatPane {
         ? await Zotero.Items.getAsync(item.parentID)
         : item;
 
-    if (!this.managers) {
+    // Ensure chatSessionManager is initialized only once per pane instance
+    if (!this.chatSessionManager) {
       await this._initializeManagers(actualParentItem);
       this._setupEventListeners(); // Listeners are now set up only once
     }
 
-    if (!this.managers) {
-      Zotero.logError(new Error("Managers not initialized in chatPane."));
+    if (!this.chatSessionManager) {
+      Zotero.logError(new Error("ChatSessionManager not initialized in chatPane."));
       return;
     }
 
@@ -96,19 +98,27 @@ export class ChatPane {
     const { doc, body } = this.uiElements;
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
 
-    const chatSessionManager = new ChatSessionManager(actualParentItem, {
-      rerenderChatMessages: (session: ChatSession | null) => {
-        if (this.managers) {
-          this.managers.uiManager.renderChatMessages(session);
-        }
+    if (!addon.data.globalChatManager) {
+      throw new Error("GlobalChatManager not initialized on addon.data.");
+    }
+
+    const chatSessionManager = new ChatSessionManager(
+      actualParentItem,
+      addon.data.globalChatManager, // Pass globalChatManager
+      {
+        rerenderChatMessages: (session: ChatSession | null) => {
+          if (this.managers) {
+            this.managers.uiManager.renderChatMessages(session);
+          }
+        },
+        rerenderSwitcher: () => {
+          if (this.managers) {
+            this.managers.uiManager.renderSessionSwitcherList();
+            this.managers.uiManager.updateSessionSwitcherSelection();
+          }
+        },
       },
-      rerenderSwitcher: () => {
-        if (this.managers) {
-          this.managers.uiManager.renderSessionSwitcherList();
-          this.managers.uiManager.updateSessionSwitcherSelection();
-        }
-      },
-    });
+    );
 
     const uiManager = new UIManager(
       doc,
@@ -501,6 +511,10 @@ export class ChatPane {
     }
     if (chatResizer && this._boundHandleResize) {
       chatResizer.removeEventListener("mousedown", this._boundHandleResize);
+    }
+    // Destroy the chatSessionManager instance
+    if (this.chatSessionManager) {
+      this.chatSessionManager.destroy();
     }
   }
 }

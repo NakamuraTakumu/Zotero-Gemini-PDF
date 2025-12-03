@@ -7,6 +7,8 @@ declare const config: {
 };
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
+import GlobalChatManager from './modules/globalChatManager'; // Import GlobalChatManager
+
 declare class Addon {
   data: {
     alive: boolean;
@@ -26,18 +28,7 @@ declare class Addon {
     };
     dialog?: DialogHelper;
     lastSelectedText?: string;
-    chatPanes: {
-      [paneId: string]: {
-        chatManager?: import("./modules/reader/chat").ChatManager;
-        uiManager?: import("./modules/reader/ui").UIManager;
-        paneId: string;
-        itemId?: number;
-        eventHandler?: (event: CustomEvent) => void;
-        actualParentItem?: Zotero.Item | null;
-        currentConversation?: import("./types/chat").Conversation | null;
-        isGeminiRequestInProgress?: boolean;
-      };
-    };
+    globalChatManager?: GlobalChatManager; // Add globalChatManager definition
   };
   hooks: typeof hooks;
   api: object;

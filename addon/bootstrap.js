@@ -33,6 +33,7 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
     ctx,
   );
   await Zotero.__addonInstance__.hooks.onStartup();
+  Zotero.__addonInstance__.data.globalChatManager?.init(); // Initialize GlobalChatManager
 }
 
 async function onMainWindowLoad({ window }, reason) {
@@ -48,6 +49,7 @@ async function shutdown({ id, version, resourceURI, rootURI }, reason) {
     return;
   }
 
+  Zotero.__addonInstance__.data.globalChatManager?.destroy(); // Destroy GlobalChatManager
   await Zotero.__addonInstance__?.hooks.onShutdown();
 
   if (chromeHandle) {

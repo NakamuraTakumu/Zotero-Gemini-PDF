@@ -1,17 +1,12 @@
 import { ChatPane } from "./reader/chatPane";
 import { getLocaleID } from "../utils/locale";
-import { getPref, setPref } from "../utils/prefs";
-import {
-  PREF_SELECTED_MODEL,
-  PREF_USE_GOOGLE_SEARCH,
-  PREF_CONTEXT_WINDOW_SIZE,
-  PREF_CHAT_PANEL_HEIGHT,
-} from "../utils/constants";
-import { ParentItemFileMetadata } from "../types/chat";
+// import { getPref, setPref } from "../utils/prefs"; // Not directly used here
+// import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_CONTEXT_WINDOW_SIZE, PREF_CHAT_PANEL_HEIGHT, } from "../utils/constants"; // Not directly used here
+// import { ParentItemFileMetadata } from "../types/chat"; // Not directly used here
 
 
 import { UIManager } from "./reader/ui";
-import { ChatSessionManager } from "./reader/chatSessionManager"; // ChatSessionManager をインポート
+// import { ChatSessionManager } from "./reader/chatSessionManager"; // ChatSessionManager is now instantiated by ChatPane
 
 import { v4 as uuidv4 } from "uuid";
 
@@ -21,6 +16,16 @@ import { v4 as uuidv4 } from "uuid";
  * for UI registration and utility functions related to the reader pane.
  */
 export class ReaderItemPaneFactory {
+  private static _chatPanes: Map<string, ChatPane> = new Map(); // Local map to store ChatPane instances
+
+  /**
+   * Returns a map of all active ChatPane instances managed by the factory.
+   * This is used by other modules to interact with specific panes.
+   * @returns {Map<string, ChatPane>} A map where keys are paneIds and values are ChatPane instances.
+   */
+  public static getChatPanes(): Map<string, ChatPane> {
+    return ReaderItemPaneFactory._chatPanes;
+  }
   /**
    * Dispatches a global event to notify other parts of the application about the
    * status of a Gemini API request.
@@ -90,7 +95,7 @@ export class ReaderItemPaneFactory {
         Zotero.log("[Gemini PDF] onInit called.");
         try {
           const chatPane = new ChatPane(body as HTMLElement);
-          addon.data.chatPanes[chatPane.paneId] = chatPane;
+          ReaderItemPaneFactory._chatPanes.set(chatPane.paneId, chatPane); // Store instance locally
         } catch (e) {
           Zotero.logError(
             new Error(`[Gemini PDF] Error initializing pane: ${e}`),
@@ -99,10 +104,10 @@ export class ReaderItemPaneFactory {
       },
       onDestroy: ({ body }) => {
         const paneId = body.dataset.paneId;
-        if (paneId && addon.data.chatPanes[paneId]) {
-          const chatPane = addon.data.chatPanes[paneId];
+        if (paneId && ReaderItemPaneFactory._chatPanes.has(paneId)) {
+          const chatPane = ReaderItemPaneFactory._chatPanes.get(paneId)!;
           chatPane.destroy();
-          delete addon.data.chatPanes[paneId];
+          ReaderItemPaneFactory._chatPanes.delete(paneId); // Remove from local map
         }
       },
       onItemChange: ({ item, setEnabled, tabType }) => {
@@ -111,11 +116,11 @@ export class ReaderItemPaneFactory {
       },
       onRender: async ({ body, item }) => {
         const paneId = body.dataset.paneId;
-        if (!paneId || !addon.data.chatPanes[paneId]) {
+        if (!paneId || !ReaderItemPaneFactory._chatPanes.has(paneId)) {
           Zotero.logError(new Error("Pane not initialized correctly."));
           return;
         }
-        const chatPane = addon.data.chatPanes[paneId];
+        const chatPane = ReaderItemPaneFactory._chatPanes.get(paneId)!;
         await chatPane.render(item);
       },
     });
