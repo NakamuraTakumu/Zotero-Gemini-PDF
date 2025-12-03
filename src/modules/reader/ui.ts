@@ -12,6 +12,7 @@ import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
 import markdownItKatex from "@vscode/markdown-it-katex";
 import markdownItContainer from "markdown-it-container";
+import markdownItCollapsible from "markdown-it-collapsible";
 import type { Token } from "markdown-it";
 
 // Helper for rendering markdown (moved from chat.ts)
@@ -52,7 +53,8 @@ const initMarkdownRenderer = (window: Window) => {
       errorColor: "#cc0000",
       output: "mathml",
       strict: false,
-    });
+    })
+    .use(markdownItCollapsible);
   // ▼▼▼ ここを追加 ▼▼▼
   // 既存の数式レンダラーを取得（なければデフォルト処理）
   // const oldMathBlock = md.renderer.rules.math_block || function(tokens, idx) {
@@ -401,6 +403,7 @@ export class UIManager {
       }
       messageDiv.innerHTML = messageHtml;
       this.chatMessages.appendChild(messageDiv);
+      this._attachMiddleClickHandler(messageDiv as HTMLElement);
     }
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
@@ -413,6 +416,7 @@ export class UIManager {
     userMessageDiv.className = "message user-message";
     userMessageDiv.innerHTML = this.renderMarkdown(text);
     this.chatMessages.appendChild(userMessageDiv);
+    this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
 
@@ -482,6 +486,7 @@ export class UIManager {
       }
     }
     element.innerHTML = messageHtml;
+    this._attachMiddleClickHandler(element as HTMLElement);
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   };
 
@@ -493,5 +498,21 @@ export class UIManager {
   clearChatInput(): void {
     this.chatInput.value = "";
     this.chatInput.focus();
+  }
+
+  /**
+   * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
+   */
+  private _attachMiddleClickHandler(messageElement: HTMLElement): void {
+    messageElement.addEventListener('mouseup', (event: MouseEvent) => {
+      if (event.button === 1) { // Middle mouse button
+        event.preventDefault();
+        event.stopPropagation();
+        const detailsElements = messageElement.querySelectorAll('details');
+        detailsElements.forEach((details: HTMLDetailsElement) => {
+          details.open = !details.open;
+        });
+      }
+    });
   }
 }

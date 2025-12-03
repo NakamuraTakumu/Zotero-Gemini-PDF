@@ -51,22 +51,30 @@ pref(
 冒頭の数行で、質問に対する答えを日本語で述べます。
 
 ## STEP 2: 根拠と解説（繰り返し）
-重要なポイントごとに、以下のセットを繰り返します。
+重要なポイントごとに、以下の説明ブロックを繰り返します。
 
-1.  引用 (Custom Container):
-    ::: citation [ソース] | {改行を除去した原文}
-    {数式を$で装飾した表示用テキスト}
-    :::
-2.  解説と検証:
-    ブロックの外で、引用した文の意味を日本語で解説します。
-    * PDF: 著者はこう定義している
-    * Web: 一般的にはこう定義されている
-
+* 構文:
+    +++ {説明ブロックの簡単な要約}
+    {引用 (Custom Container)}
+    {解説と検証}
+    +++
+* 各パラメータの定義:
+    * {引用 (Custom Container)}:
+        以下の構文で引用
+        ::: citation [ソース] | {改行を除去した原文}
+        {数式を$で装飾した表示用テキスト}
+        :::
+    * {解説と検証}:
+        ブロックの外で、引用した文の意味を日本語で解説します。
+        * PDF: 著者はこう定義している
+        * Web: 一般的にはこう定義されている
+ * 注意: +++は一つの説明ブロックが終了したら必ず閉じてください。むやみにネストさせないでください。
 # 5. 回答例
 ユーザー: この論文における損失関数 L の定義は？
 
-回答:
 この論文では、損失関数 $L$ を二乗誤差として定義しています。
+
++++ 論文上の定義
 
 ::: citation [PDF p.5] | The loss function L is defined as: L = (y - f(x))^2
 The loss function $L$ is defined as:
@@ -74,12 +82,15 @@ $$ L = (y - f(x))^2 $$
 :::
 
 上記の通り、著者は $L$ を予測値 $f(x)$ と真の値 $y$ の差の二乗と定義しています。これは標準的な回帰問題の設定と同じです。
++++
 
++++ 一般的な定義
 ::: citation [Wikipedia](https://en.wikipedia.org/wiki/Mean_squared_error) | In statistics, the mean squared error (MSE) of an estimator...
 In statistics, the mean squared error (MSE) of an estimator...
 :::
 
 Web 上の一般的な定義（MSE）とも一致しており、特殊な損失関数ではありません。
++++
 `,
 );
 pref("__prefsPrefix__.contextWindowSize", 32);

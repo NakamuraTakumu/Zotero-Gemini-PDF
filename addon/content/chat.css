@@ -347,3 +347,11 @@
   white-space: normal !important; /* 内部的にも改行ルールをリセット */
   text-indent: 0 !important;
 }
+
+/* Styling for collapsible sections */
+details summary {
+  font-size: 1.2em; /* Make the summary text larger */
+  font-weight: bold;
+  cursor: pointer; /* Indicate it's clickable */
+  margin-bottom: 0.5em; /* Space below the summary */
+}
