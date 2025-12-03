@@ -147,10 +147,17 @@ export class ChatSessionManager {
 
   private async _initializeActiveSession(): Promise<void> {
     const sessions = this.globalChatManager.getAllSessions(this._itemKey);
+    Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Found ${sessions.length} sessions for item ${this._itemKey}.`);
+    if (sessions.length > 0) {
+      sessions.forEach(s => Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Existing session: ID=${s.id}, Title="${s.title}", Created=${s.history.metadata.createdTimestamp}`));
+    }
+
+
     if (sessions.length === 0) {
-      // If no sessions exist, create a new default one
+      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: No sessions found, creating a new one.`);
       const newSession = await this.createSession();
       this._activeSessionId = newSession.id;
+      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Created new session ID: ${newSession.id}`);
     } else {
       // Otherwise, find the most recent session and activate it.
       const latestSession = sessions.sort((a, b) => {
@@ -159,7 +166,9 @@ export class ChatSessionManager {
         return dateB.getTime() - dateA.getTime();
       })[0];
       this._activeSessionId = latestSession.id;
+      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Activated latest session ID: ${latestSession.id}, Title: "${latestSession.title}"`);
     }
+    Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Final active session ID set to: ${this._activeSessionId}`);
   }
 
   /**

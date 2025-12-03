@@ -1,9 +1,0 @@
-feat(ui): Enable rendering of <details> and <summary> tags
-
-Enabled support for structured, collapsible content in the chat UI by allowing `<details>` and `<summary>` HTML tags.
-
-This was achieved through two changes:
-1.  Updated the `DOMPurify` configuration to include `'details'` and `'summary'` in the `ADD_TAGS` allowlist, preventing them from being sanitized out.
-2.  Set the `html` option to `true` in the `markdown-it` constructor, which allows the Markdown renderer to process and display raw HTML tags that have passed sanitization.
-
-These changes allow the model to generate content using these tags for better-structured and collapsible explanations, which will now be correctly rendered in the user interface.

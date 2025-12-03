@@ -58,6 +58,7 @@ class GlobalChatManager extends EventEmitter {
     const conversations: ChatSession[] = [];
 
     for (const attachment of childAttachments) {
+
       if (
         (attachment.itemType as string) === "attachment" &&
         attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
@@ -71,7 +72,7 @@ class GlobalChatManager extends EventEmitter {
               await Zotero.File.getContentsAsync(conversationFilePath);
             if (typeof content === "string" && content.trim() !== "") {
               const parsedHistory = JSON.parse(content) as ChatSessionHistory;
-              const newSession = new ChatSession(parsedHistory, parentItem); // onTitleChangeCallback は ChatSessionManager が持つ
+                            const newSession = new ChatSession(parsedHistory, parentItem, this); // Pass 'this' (GlobalChatManager)
               await newSession.init();
               conversations.push(newSession);
               Zotero.log(
@@ -101,7 +102,9 @@ class GlobalChatManager extends EventEmitter {
    * @returns A promise that resolves to the newly created ChatSession.
    */
   public async createSession(parentItem: Zotero.Item): Promise<ChatSession> {
-    const newSession = ChatSession.createNew(parentItem);
+    Zotero.log(`[GlobalChatManager] createSession: Called for parent item: ${parentItem.key}`);
+    const newSession = ChatSession.createNew(parentItem, this); // Pass 'this' (GlobalChatManager)
+    Zotero.log(`[GlobalChatManager] createSession: New session object created with ID: ${newSession.id}`);
     await newSession.init(); // Create attachment
     await newSession.save(); // Save initial state to attachment
 
@@ -112,6 +115,7 @@ class GlobalChatManager extends EventEmitter {
     this._sessions.get(itemKey)!.push(newSession);
 
     this.emit("session-added", { itemKey: itemKey, session: newSession });
+    Zotero.log(`[GlobalChatManager] createSession: Session ${newSession.id} created and added to manager.`);
     return newSession;
   }
 

@@ -226,16 +226,12 @@ export async function sendMessageToGemini(
       requestBody.config.systemInstruction = systemInstructionText;
     }
 
-    Zotero.log(
-      `[Gemini] Full API Request: ${JSON.stringify(requestBody, null, 2)}`,
-    );
+
 
     const result: GenerateContentResponse =
       await client.models.generateContent(requestBody);
 
-    Zotero.log(
-      `[Gemini] Full API Response: ${JSON.stringify(result, null, 2)}`,
-    );
+
 
     const thoughts: string[] = [];
     let responseText: string | null = null;
@@ -262,12 +258,7 @@ export async function sendMessageToGemini(
         responseText = responsePartTexts.join("\n");
       }
 
-      if (candidate.groundingMetadata) {
-        groundingMetadata = candidate.groundingMetadata;
-        Zotero.log(
-          `[Gemini] Grounding metadata found: ${JSON.stringify(groundingMetadata)}`,
-        );
-      }
+
     }
 
     if (typeof responseText !== "string" || responseText === null) {
@@ -293,7 +284,7 @@ export async function sendMessageToGemini(
         groundingMetadata: undefined,
       };
     }
-    Zotero.log(`[Gemini] Raw response from API: ${responseText}`);
+
     return { thoughts, responseText, groundingMetadata };
   } catch (error: any) {
     Zotero.logError(

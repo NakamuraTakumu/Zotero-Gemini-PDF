@@ -17,6 +17,7 @@ import { Content, Part } from "@google/genai";
 import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
 import { v4 as uuidv4 } from "uuid";
 import { getString } from "../../utils/locale";
+import GlobalChatManager from "../globalChatManager"; // Add this import
 
 /**
  * Represents a single chat session, encapsulating its history and operations.
@@ -27,13 +28,18 @@ export class ChatSession {
   private _history: ChatSessionHistory;
   private _parentItem: Zotero.Item;
   private _attachment!: Zotero.Item; // Initialized in init()
+  private globalChatManager: GlobalChatManager; // Add this line
 
   /**
    * Creates a new ChatSession instance for a new chat.
    * @param parentItem The Zotero parent item.
+   * @param globalChatManager The global chat manager instance. // Add this param
    * @returns A new ChatSession instance.
    */
-  public static createNew(parentItem: Zotero.Item): ChatSession {
+  public static createNew(
+    parentItem: Zotero.Item,
+    globalChatManager: GlobalChatManager, // Add this param
+  ): ChatSession {
     const newHistory: ChatSessionHistory = {
       metadata: {
         zoteroParentItemKey: parentItem.key,
@@ -44,12 +50,17 @@ export class ChatSession {
       },
       history: [],
     };
-    return new ChatSession(newHistory, parentItem);
+    return new ChatSession(newHistory, parentItem, globalChatManager); // Add globalChatManager
   }
 
-  constructor(history: ChatSessionHistory, parentItem: Zotero.Item) {
+  constructor(
+    history: ChatSessionHistory,
+    parentItem: Zotero.Item,
+    globalChatManager: GlobalChatManager, // Add this param
+  ) {
     this._history = history;
     this._parentItem = parentItem;
+    this.globalChatManager = globalChatManager; // Add this line
   }
 
   /**
@@ -98,26 +109,52 @@ export class ChatSession {
    * Finds an existing Gemini Conversation attachment or creates a new one if it doesn't exist.
    */
   private async _getOrCreateConversationAttachment(): Promise<Zotero.Item> {
+    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Called for chatId: ${this.id}, parentItemKey: ${this._parentItem.key}`);
     const expectedChatId = this._history.metadata.chatId;
-    const expectedAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${expectedChatId}`;
-    const expectedFilename = `${GEMINI_CHAT_FILENAME_PREFIX}${expectedChatId}.json`;
 
     const childAttachments = await Zotero.Items.get(
       this._parentItem.getAttachments(),
     );
+    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Found ${childAttachments.length} child attachments for parent item: ${this._parentItem.key}`);
+
     for (const attachment of childAttachments) {
+      const attachmentTitle = attachment.getField("title");
+      Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Checking existing attachment: key=${attachment.key}, title="${attachmentTitle}", itemType=${attachment.itemType}, linkMode=${attachment.attachmentLinkMode}`);
+
+      // Filter for attachments that are likely Gemini Chat files
       if (
         (attachment.itemType as string) === "attachment" &&
-        attachment.getField("title") === expectedAttachmentTitle && // Exact match for unique title
+        attachmentTitle?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
         attachment.attachmentLinkMode ===
           Zotero.Attachments.LINK_MODE_IMPORTED_FILE
       ) {
-        return attachment;
+        const conversationFilePath = attachment.getFilePath();
+        if (conversationFilePath) {
+          try {
+            const content = await Zotero.File.getContentsAsync(conversationFilePath);
+            if (typeof content === "string" && content.trim() !== "") {
+              const parsedHistory = JSON.parse(content) as ChatSessionHistory;
+              // Check if the chatId from the parsed content matches the expected chatId
+              if (parsedHistory.metadata.chatId === expectedChatId) {
+                Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Found matching existing Gemini Chat attachment by chatId: ${attachment.key}`);
+                return attachment;
+              } else {
+                Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Attachment title starts with prefix, but chatId mismatch. Attachment chatId: ${parsedHistory.metadata.chatId}, Expected chatId: ${expectedChatId}`);
+              }
+            } else {
+              Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Content of attachment ${attachment.key} was empty or not a string.`);
+            }
+          } catch (e: any) {
+            Zotero.logError(new Error(`[ChatSession] _getOrCreateConversationAttachment: Error parsing attachment ${attachment.key} content: ${e.message || String(e)}`));
+          }
+        }
       }
     }
 
-    const conversationJsonString = JSON.stringify(this._history, null, 2);
-    const filename = expectedFilename;
+    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: No existing Gemini Chat attachment found matching chatId: ${this.id}. Creating new one.`);
+    // If no existing attachment is found, create a new one
+    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${expectedChatId}`; // Use chatId for initial title to ensure uniqueness in file system
+    const filename = `${GEMINI_CHAT_FILENAME_PREFIX}${expectedChatId}.json`;
 
     const tempDir = Zotero.getTempDirectory();
     const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
@@ -125,6 +162,7 @@ export class ChatSession {
     const tempFilePath = tempDir.path;
 
     try {
+      const conversationJsonString = JSON.stringify(this._history, null, 2);
       await Zotero.File.putContentsAsync(tempFilePath, conversationJsonString);
       const tempFile = Zotero.File.pathToFile(tempFilePath);
 
@@ -132,12 +170,13 @@ export class ChatSession {
         file: tempFile,
         parentItemID: this._parentItem.id,
         contentType: "application/json",
-        title: expectedAttachmentTitle,
+        title: newAttachmentTitle, // Use the chatId-based title here
       });
 
       Zotero.debug(
         `Successfully created new conversation attachment with key ${newAttachment.key}`,
       );
+      Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: New attachment created successfully: ${newAttachment.key}`);
       return newAttachment;
     } catch (e: any) {
       Zotero.logError(
@@ -289,7 +328,7 @@ export class ChatSession {
           .replace(/^「|」$/g, "")
           .replace(/\.$/, "");
         await this._updateAttachmentTitle(); // Update attachment title metadata
-        await this.save();
+        await this.globalChatManager.saveSession(this); // Modified line
         return true;
       }
       return false;
@@ -319,7 +358,7 @@ export class ChatSession {
     thoughts?: string[];
     groundingMetadata?: any;
   }> {
-    Zotero.log(`[ChatSession] sendMessage called. textForApi: ${textForApi}`);
+
     const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
 
     const fullHistory: Content[] = this._history.history.map((msg) => ({
@@ -350,7 +389,7 @@ export class ChatSession {
     }
 
     try {
-      Zotero.log(`[ChatSession] sendMessage: Calling sendMessageToGemini.`);
+  
       const { thoughts, responseText, groundingMetadata } =
         await sendMessageToGemini(
           truncatedHistory,
@@ -358,24 +397,21 @@ export class ChatSession {
           true, // includeThoughts - consider making this configurable
           tools,
         );
-      Zotero.log(
-        `[ChatSession] sendMessage: received response from Gemini API.`,
-      );
+  
 
       this.addBotMessage(
         responseText || "",
         getPref(PREF_SELECTED_MODEL) as string,
         groundingMetadata,
       );
-      await this.save();
-      Zotero.log(`[ChatSession] sendMessage: session saved.`);
+
 
       // After the first exchange, generate a title for the session
       if (
         this._history.history.length === 2 &&
         !this._history.metadata.isTitleGenerated
       ) {
-        Zotero.log(`[ChatSession] sendMessage: Generating title for session.`);
+
         // Don't wait for this to complete
         this.generateTitle();
       }
@@ -395,3 +431,4 @@ export class ChatSession {
     }
   }
 }
+
