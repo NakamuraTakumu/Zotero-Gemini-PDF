@@ -33,7 +33,7 @@ const initMarkdownRenderer = (window: Window) => {
         if (tokens[idx].nesting === 1) {
           const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
           if (m) {
-            const source = md.utils.escapeHtml(m[1].trim());
+            const source = md.renderInline(m[1].trim());
             const originalQuote = md.utils.escapeHtml(m[2].trim());
             return (
               `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
@@ -441,7 +441,9 @@ export class UIManager {
 
     if (thoughts && thoughts.length > 0) {
       const thoughtsHtml = thoughts
-        .map((t) => `<div class="thought">${this.renderMarkdown(t)}</div>`)
+        .flatMap(t => t.split('\n')) // Split multi-line thoughts into an array of single lines
+        .filter(line => line.trim() !== '') // Remove any empty lines
+        .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
         .join("");
       messageHtml =
         `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` +

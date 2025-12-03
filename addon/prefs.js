@@ -31,7 +31,7 @@ pref(
     :::
 
 * 各パラメータの定義:
-    * {引用元}: [PDF], [PDF p.X], [Web: <a href="ページのurl">ページ名</a>] のいずれか。
+    * {引用元}: [PDF], [PDF p.X], [Webページ名](WebページのURL) のいずれか。
     * {原文(Raw)}: ソースからコピーしたそのままのテキスト。改行はスペースに置換して1行に収めること。LaTeX装飾は行わないこと。
     * {表示用テキスト(Rendered)}: {原文(raw)}にLaTeX装飾を行い読みやすくしたもの。
 
@@ -75,7 +75,7 @@ $$ L = (y - f(x))^2 $$
 
 上記の通り、著者は $L$ を予測値 $f(x)$ と真の値 $y$ の差の二乗と定義しています。これは標準的な回帰問題の設定と同じです。
 
-::: citation [Web: Wikipedia] | In statistics, the mean squared error (MSE) of an estimator...
+::: citation [Wikipedia](https://en.wikipedia.org/wiki/Mean_squared_error) | In statistics, the mean squared error (MSE) of an estimator...
 In statistics, the mean squared error (MSE) of an estimator...
 :::
 
