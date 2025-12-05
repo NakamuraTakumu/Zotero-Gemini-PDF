@@ -57,18 +57,7 @@ const initMarkdownRenderer = (window: Window) => {
       strict: false,
     })
     .use(markdownItCollapsible);
-  // ▼▼▼ ここを追加 ▼▼▼
-  // 既存の数式レンダラーを取得（なければデフォルト処理）
-  // const oldMathBlock = md.renderer.rules.math_block || function(tokens, idx) {
-  //   return '<div class="katex-block">' + tokens[idx].content + '</div>';
-  // };
 
-  // // 数式ブロックのレンダラーを「スクロール用divで包む処理」で上書きする
-  // md.renderer.rules.math_block = (tokens, idx, options, env, self) => {
-  //   const html = oldMathBlock(tokens, idx, options, env, self);
-  //   // ここで強制的に div class="math-scroll" で包む
-  //   return `<div class="math-scroll">${html}</div>`;
-  // };
   return (text: string): string => {
     const sanitizedText = DOMPurify.sanitize(text, {
       ADD_TAGS: [

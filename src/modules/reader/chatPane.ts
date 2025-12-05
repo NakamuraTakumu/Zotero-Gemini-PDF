@@ -371,8 +371,9 @@ export class ChatPane {
         thoughts,
         groundingMetadata,
       );
+      await activeSession.save(); // Geminiの返答後に履歴を保存
       Zotero.log(
-        `[Gemini PDF] _handleSendMessage: Updating bot message in UI.`,
+        `[Gemini PDF] _handleSendMessage: Updating bot message in UI and saving active session.`,
       );
     } catch (error: any) {
       const errorMessage = error.message || String(error);

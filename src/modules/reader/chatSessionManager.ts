@@ -108,22 +108,29 @@ export class ChatSessionManager {
     }
   };
 
-  private _handleGlobalSessionDeleted = (event: {
+  private _handleGlobalSessionDeleted = async (event: { // async キーワードを追加
     itemKey: string;
     sessionId: string;
   }) => {
     if (event.itemKey === this._itemKey) {
       Zotero.debug(`[ChatSessionManager] _handleGlobalSessionDeleted: Session ${event.sessionId} deleted.`);
-      this.rerenderSwitcher();
-      // If the active session was deleted, switch to another or create a new one
+      this.rerenderSwitcher(); // スイッチャーの再描画
+
+      // 削除されたセッションがアクティブだった場合、新しいアクティブセッションを設定
       if (this._activeSessionId === event.sessionId) {
         const remainingSessions = this.globalChatManager.getAllSessions(this._itemKey);
         if (remainingSessions.length > 0) {
+          // 残りのセッションに切り替え。switchSession内で rerenderChatMessages が呼ばれる
           this.switchSession(remainingSessions[0].id);
         }
         else {
-          void this.createSession(); // createSession handles switching
+          // 新しいセッションを作成し、完了を待つ
+          await this.createSession(); // await を追加
         }
+      } else {
+        // アクティブセッションが削除されたわけではないが、セッションが減った。
+        // 現在のアクティブセッションを再描画することで、画面を最新の状態にする。
+        this.rerenderChatMessages(this.getActiveSession());
       }
     }
   };
@@ -246,21 +253,21 @@ export class ChatSessionManager {
 
     const chatIdToDelete = activeSession.id;
 
-    try {
-      await this.globalChatManager.deleteSession(activeSession);
-      // The global event handler _handleGlobalSessionDeleted will update _activeSessionId and rerender.
-      return true;
-    } catch (e: any) {
-      Zotero.logError(
-        new Error(
-          `[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${
-            e.message || String(e)
-          }`,
-        ),
-      );
-      return false;
-    }
-  }
+          try {
+            await this.globalChatManager.deleteSession(activeSession);
+            this._activeSessionId = null; // アクティブセッションIDをリセット
+            // The global event handler _handleGlobalSessionDeleted will update _activeSessionId and rerender.
+            return true;
+          } catch (e: any) {
+            Zotero.logError(
+              new Error(
+                `[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${
+                  e.message || String(e)
+                }`,
+              ),
+            );
+            return false;
+          }  }
 
   /**
    * Processes a user's message, sends it to the Gemini API, and updates the history.
