@@ -171,6 +171,10 @@ export class ChatSession {
         parentItemID: this._parentItem.id,
         contentType: "application/json",
         title: newAttachmentTitle, // Use the chatId-based title here
+        saveOptions: {
+          // Prevent selection change that can disrupt the active PDF reader tab.
+          skipSelect: true,
+        },
       });
 
       Zotero.debug(
@@ -327,8 +331,8 @@ export class ChatSession {
           .trim()
           .replace(/^「|」$/g, "")
           .replace(/\.$/, "");
-        await this._updateAttachmentTitle(); // Update attachment title metadata
-        await this.globalChatManager.saveSession(this); // Modified line
+        await this._updateAttachmentTitle();
+        await this.globalChatManager.saveSession(this);
         return true;
       }
       return false;
@@ -336,6 +340,76 @@ export class ChatSession {
       Zotero.logError(
         new Error(
           `[ChatSession] Failed to generate session title: ${
+            e.message || String(e)
+          }`,
+        ),
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Regenerates the title using the oldest messages in the current session.
+   * The number of messages used is controlled by PREF_CONTEXT_WINDOW_SIZE.
+   */
+  public async regenerateTitleFromTopHistory(): Promise<boolean> {
+    if (this._history.history.length === 0) {
+      return false;
+    }
+
+    const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
+    const historyForTitle =
+      historyLimit > 0
+        ? this._history.history.slice(0, historyLimit)
+        : [...this._history.history];
+
+    const firstUserMessage = historyForTitle.find((m) => m.role === "user");
+    const firstModelMessage = historyForTitle.find((m) => m.role === "model");
+    const userPrompt = firstUserMessage?.parts?.[0]?.text || "";
+    const modelResponse = firstModelMessage?.parts?.[0]?.text || "";
+
+    const promptTemplate = getPref(PREF_TITLE_GENERATION_PROMPT) as string;
+    const basePrompt = promptTemplate
+      .replace("{userPrompt}", userPrompt)
+      .replace("{modelResponse}", modelResponse);
+
+    const historyTranscript = historyForTitle
+      .map((message, index) => {
+        const roleLabel = message.role === "user" ? "User" : "Assistant";
+        const text = message.parts?.[0]?.text || "";
+        return `${index + 1}. ${roleLabel}: ${text}`;
+      })
+      .join("\n");
+
+    const titlePrompt =
+      `${basePrompt}\n\n` +
+      `Use the following chat history (oldest first, first ${historyForTitle.length} messages) as primary context for title regeneration:\n` +
+      `${historyTranscript}`;
+
+    const modelForTitle = getPref(PREF_TITLE_GENERATION_MODEL) as string;
+
+    try {
+      const { responseText } = await sendMessageToGemini(
+        [],
+        [{ text: titlePrompt }],
+        false,
+        undefined,
+        modelForTitle,
+      );
+      if (responseText) {
+        this.title = responseText
+          .trim()
+          .replace(/^「|」$/g, "")
+          .replace(/\.$/, "");
+        await this._updateAttachmentTitle();
+        await this.globalChatManager.saveSession(this);
+        return true;
+      }
+      return false;
+    } catch (e: any) {
+      Zotero.logError(
+        new Error(
+          `[ChatSession] Failed to regenerate session title: ${
             e.message || String(e)
           }`,
         ),
@@ -431,4 +505,3 @@ export class ChatSession {
     }
   }
 }
-

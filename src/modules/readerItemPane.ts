@@ -70,10 +70,11 @@ export class ReaderItemPaneFactory {
       bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
           <html:div class="chat-messages" id="chat-messages"></html:div>
           <html:div class="chat-resizer" id="chat-resizer"></html:div>
-                    <html:div class="chat-session-area">
+          <html:div class="chat-session-area">
               <html:label for="chat-session-switcher">Session:</html:label>
               <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
               <html:button id="delete-session-button" class="delete-session-button">🗑️</html:button>
+              <html:button id="regenerate-title-button" class="regenerate-title-button" title="Regenerate title">↻</html:button>
           </html:div>
           <html:div class="chat-model-selector-area">
               <html:label for="gemini-model-select">Model:</html:label>

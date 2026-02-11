@@ -125,6 +125,7 @@ const initMarkdownRenderer = (window: Window) => {
 };
 
 export class UIManager {
+  private static readonly SESSION_TITLE_MAX_CHARS = 32;
   private doc: Document;
   private body: HTMLElement;
   private chatMessages: HTMLDivElement;
@@ -302,6 +303,14 @@ export class UIManager {
     };
   }
 
+  private _formatSessionTitleForSwitcher(title: string): string {
+    const cleaned = title.replace(/\s+/g, " ").trim();
+    if (cleaned.length <= UIManager.SESSION_TITLE_MAX_CHARS) {
+      return cleaned;
+    }
+    return `${cleaned.slice(0, UIManager.SESSION_TITLE_MAX_CHARS - 1)}...`;
+  }
+
   renderSessionSwitcherList() {
     const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
     if (!sessionSwitcher) return;
@@ -314,7 +323,8 @@ export class UIManager {
     sessions.forEach(session => {
       const option = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
       option.value = session.id;
-      option.textContent = session.title;
+      option.textContent = this._formatSessionTitleForSwitcher(session.title);
+      option.title = session.title;
       sessionSwitcher.appendChild(option);
     });
   }
@@ -356,6 +366,41 @@ export class UIManager {
         } else {
           Zotero.logError(new Error("[Gemini PDF] Failed to delete session."));
         }
+      }
+    };
+  }
+
+  initRegenerateTitleButton() {
+    const regenerateButton = this.body.querySelector(
+      "#regenerate-title-button",
+    ) as HTMLButtonElement;
+    if (!regenerateButton) return;
+
+    regenerateButton.onclick = async () => {
+      const activeSession = this.chatSessionManager.getActiveSession();
+      if (!activeSession) {
+        Zotero.debug("[Gemini PDF] No active session to regenerate title.");
+        return;
+      }
+
+      regenerateButton.disabled = true;
+      try {
+        const success = await activeSession.regenerateTitleFromTopHistory();
+        if (!success) {
+          Zotero.logError(
+            new Error("[Gemini PDF] Failed to regenerate session title."),
+          );
+        }
+      } catch (e: any) {
+        Zotero.logError(
+          new Error(
+            `[Gemini PDF] Error regenerating session title: ${
+              e.message || String(e)
+            }`,
+          ),
+        );
+      } finally {
+        regenerateButton.disabled = false;
       }
     };
   }

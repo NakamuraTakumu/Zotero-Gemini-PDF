@@ -140,6 +140,7 @@ export class ChatPane {
     this.managers.uiManager.initIncludeThoughtsCheckbox();
     this.managers.uiManager.initSessionSwitcher();
     this.managers.uiManager.initDeleteButton();
+    this.managers.uiManager.initRegenerateTitleButton();
   }
 
   private _setupEventListeners() {

@@ -84,9 +84,16 @@
   color: var(--chat-text-color);
 }
 *|select.chat-session-switcher {
-  max-width: 200px; /* 最大幅を設定 */
-  flex-shrink: 1; /* 親要素のスペースが足りない場合に縮小を許可 */
+  width: 220px;
+  max-width: 220px;
+  min-width: 0;
+  flex-shrink: 1;
   flex-grow: 0;
+}
+*|button.delete-session-button,
+*|button.regenerate-title-button {
+  min-width: 28px;
+  padding: 2px 6px;
 }
 *|div.chat-input-area {
   display: flex;
