@@ -320,6 +320,10 @@ export class PdfFileSyncManager {
         parentItemID: parentItem.id,
         contentType: "application/json",
         title: attachmentTitle,
+        saveOptions: {
+          // Keep current item selection to avoid closing or switching the reader tab.
+          skipSelect: true,
+        },
       });
 
       Zotero.debug(
