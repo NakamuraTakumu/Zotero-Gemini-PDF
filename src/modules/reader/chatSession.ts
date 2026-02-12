@@ -7,6 +7,7 @@ import { getPref } from "../../utils/prefs";
 import {
   PREF_SELECTED_MODEL,
   PREF_USE_GOOGLE_SEARCH,
+  PREF_INCLUDE_THOUGHTS,
   PREF_CONTEXT_WINDOW_SIZE,
   PREF_TITLE_GENERATION_MODEL,
   PREF_TITLE_GENERATION_PROMPT,
@@ -284,6 +285,7 @@ export class ChatSession {
   public addBotMessage(
     text: string,
     model: string,
+    thoughts?: string[],
     groundingMetadata?: any,
   ): void {
     const botMessage: ChatMessage = {
@@ -291,6 +293,7 @@ export class ChatSession {
       role: "model",
       model: model,
       parts: [{ text: text || "" }],
+      thoughts: thoughts,
       groundingMetadata: groundingMetadata,
     };
     this._history.history.push(botMessage);
@@ -461,6 +464,7 @@ export class ChatSession {
       // urlContextも同時に使う
       tools = [{ urlContext: {} }, { googleSearch: {} }];
     }
+    const includeThoughts = Boolean(getPref(PREF_INCLUDE_THOUGHTS));
 
     try {
   
@@ -468,7 +472,7 @@ export class ChatSession {
         await sendMessageToGemini(
           truncatedHistory,
           userParts,
-          true, // includeThoughts - consider making this configurable
+          includeThoughts,
           tools,
         );
   
@@ -476,6 +480,7 @@ export class ChatSession {
       this.addBotMessage(
         responseText || "",
         getPref(PREF_SELECTED_MODEL) as string,
+        thoughts,
         groundingMetadata,
       );
 

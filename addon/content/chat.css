@@ -8,7 +8,7 @@
   --send-button-text: white;
   --user-message-bg: #dcf8c6;
   --bot-message-bg: #fff;
-  --bot-message-border: #eee;
+  --bot-message-border: #bbb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,7 +22,7 @@
     --send-button-text: white;
     --user-message-bg: #4a6a3a;
     --bot-message-bg: #3a3a3a;
-    --bot-message-border: #555;
+    --bot-message-border: #c0c0c0;
   }
 }
 
@@ -142,7 +142,8 @@
   align-self: flex-end;
   border-bottom-right-radius: 4px;
 }
-*|div.bot-message {
+*|div.bot-message,
+*|div.model-message {
   background: var(--bot-message-bg);
   border: 1px solid var(--bot-message-border);
   align-self: flex-start;
@@ -372,10 +373,33 @@
   text-indent: 0 !important;
 }
 
-/* Styling for collapsible sections */
-details summary {
+/* Styling for collapsible sections (content details only) */
+details:not(.thoughts-container) summary {
   font-size: 1.2em; /* Make the summary text larger */
   font-weight: bold;
   cursor: pointer; /* Indicate it's clickable */
   margin-bottom: 0.5em; /* Space below the summary */
+}
+
+/* Distinct styling for model thoughts details */
+details.thoughts-container {
+  margin: 0.6em 0 0.8em;
+  padding: 0.5em 0.7em;
+  border-left: 3px solid #7a8699;
+  background-color: #f4f6f8;
+  border-radius: 6px;
+}
+
+details.thoughts-container > summary {
+  font-size: 0.95em;
+  font-weight: 600;
+  color: #3a4657;
+  cursor: pointer;
+  margin-bottom: 0.35em;
+}
+
+details.thoughts-container .thought {
+  font-size: 0.92em;
+  line-height: 1.5;
+  color: #2f3845;
 }

@@ -44,6 +44,12 @@ When providing grounds for your response, strictly adhere to the following speci
     * Do not use \( ... \). Rendering will not work correctly.
     * Do not enclose $...$ blocks in ' ... '. Also, do not substitute $...$ with ' ... '.
 
+* Japanese Text and Markdown Emphasis Spacing Rule:
+    * When decorating text by wrapping it with Markdown emphasis symbols (e.g., **...**, *...*, ~~...~~), insert a single half-width space outside the wrapping symbols, and do not insert spaces inside the symbols.
+    * Correct: てすと **「てすと」** てすと
+    * Incorrect: てすと**「てすと」**てすと
+    * Incorrect: てすと ** 「てすと」 ** てすと
+
 # 4. Response Structure Format
 Construct the response using the following steps.
 

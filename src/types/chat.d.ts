@@ -49,6 +49,7 @@ export interface ChatMessage {
   role: "user" | "model";
   model?: string; // modelロールの場合のみ
   parts: { text: string }[];
+  thoughts?: string[];
   groundingMetadata?: any;
 }
 
@@ -91,5 +92,6 @@ export interface ConversationHistoryItem {
   role: "user" | "model";
   model?: string; // Only for role: "model"
   parts: { text: string }[];
+  thoughts?: string[];
   groundingMetadata?: any;
 }

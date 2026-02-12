@@ -415,8 +415,19 @@ export class UIManager {
         "http://www.w3.org/1999/xhtml",
         "div",
       ) as HTMLDivElement;
-      messageDiv.className = `message ${message.role}-message`;
+      const roleClass = message.role === "model" ? "bot-message" : "user-message";
+      messageDiv.className = `message ${roleClass}`;
       let messageHtml = this.renderMarkdown(message.parts[0].text);
+      if (message.role === "model" && message.thoughts && message.thoughts.length > 0) {
+        const thoughtsHtml = message.thoughts
+          .flatMap(t => t.split('\n'))
+          .filter(line => line.trim() !== '')
+          .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
+          .join("");
+        messageHtml =
+          `<details class="thoughts-container"><summary>モデル思考</summary>${thoughtsHtml}</details>` +
+          messageHtml;
+      }
       if (message.role === "model" && message.groundingMetadata) {
         let sources = "";
         if (
@@ -498,7 +509,7 @@ export class UIManager {
               .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
               .join("");
             messageHtml =
-              `<details class="thoughts-container"><summary>思考プロセスを表示</summary>${thoughtsHtml}</details>` +
+              `<details class="thoughts-container"><summary>モデル思考</summary>${thoughtsHtml}</details>` +
               messageHtml;
           }
       
@@ -557,7 +568,7 @@ export class UIManager {
             if (event.button === 1) { // Middle mouse button
               event.preventDefault();
               event.stopPropagation();
-              const detailsElements = messageElement.querySelectorAll('details');
+              const detailsElements = messageElement.querySelectorAll('details:not(.thoughts-container)');
               let anyClosed = false;
               detailsElements.forEach((details: HTMLDetailsElement) => {
                 if (!details.open) {
