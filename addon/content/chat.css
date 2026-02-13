@@ -133,6 +133,33 @@
   user-select: text; /* Explicitly allow text selection */
 }
 
+.message-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 160px;
+  background: var(--chat-input-bg);
+  border: 1px solid var(--chat-border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+}
+
+.message-context-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--chat-text-color);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.message-context-menu-item:hover {
+  background: rgba(127, 127, 127, 0.15);
+}
+
 /* *|div.message > * { /* Apply to all direct children of .message */
 /*   word-break: break-all; */
 /* } */

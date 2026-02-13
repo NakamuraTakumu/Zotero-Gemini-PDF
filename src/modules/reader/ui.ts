@@ -135,6 +135,8 @@ export class UIManager {
   private chatSessionManager: ChatSessionManager;
   public renderMarkdown: (text: string) => string;
   private citationPopup: HTMLDivElement; // 追加
+  private messageContextMenu: HTMLDivElement;
+  private contextMenuTargetMessage: HTMLElement | null = null;
 
   constructor(
     doc: Document,
@@ -158,6 +160,47 @@ export class UIManager {
     this.citationPopup.className = "citation-popup";
     this.citationPopup.style.display = "none";
     this.body.appendChild(this.citationPopup);
+
+    this.messageContextMenu = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div",
+    ) as HTMLDivElement;
+    this.messageContextMenu.className = "message-context-menu";
+    this.messageContextMenu.style.display = "none";
+    const copyPlainTextButton = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "button",
+    ) as HTMLButtonElement;
+    copyPlainTextButton.type = "button";
+    copyPlainTextButton.className = "message-context-menu-item";
+    copyPlainTextButton.dataset.action = "copy-plain-text";
+    copyPlainTextButton.textContent = "全体をテキストでコピー";
+
+    const copyMarkdownButton = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "button",
+    ) as HTMLButtonElement;
+    copyMarkdownButton.type = "button";
+    copyMarkdownButton.className = "message-context-menu-item";
+    copyMarkdownButton.dataset.action = "copy-markdown";
+    copyMarkdownButton.textContent = "全体をMarkdownでコピー";
+
+    const copySelectionButton = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "button",
+    ) as HTMLButtonElement;
+    copySelectionButton.type = "button";
+    copySelectionButton.className = "message-context-menu-item";
+    copySelectionButton.dataset.action = "copy-selection";
+    copySelectionButton.textContent = "選択範囲をコピー";
+
+    this.messageContextMenu.append(
+      copyPlainTextButton,
+      copyMarkdownButton,
+      copySelectionButton,
+    );
+    this.body.appendChild(this.messageContextMenu);
+    this._initMessageContextMenuEvents();
   }
 
   registerPrefObservers() {
@@ -410,7 +453,7 @@ export class UIManager {
     if (!session) {
       return;
     }
-    for (const message of session.history.history) {
+    session.history.history.forEach((message) => {
       const messageDiv = this.doc.createElementNS(
         "http://www.w3.org/1999/xhtml",
         "div",
@@ -459,22 +502,26 @@ export class UIManager {
         }
       }
       messageDiv.innerHTML = messageHtml;
-          this.chatMessages.appendChild(messageDiv);
-          this._attachMiddleClickHandler(messageDiv as HTMLElement);
-          this._attachCitationPopupListeners(messageDiv as HTMLElement); // 追加
-          }
-          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-        }
+      messageDiv.dataset.rawText = message.parts[0].text || "";
+      this.chatMessages.appendChild(messageDiv);
+      this._attachMiddleClickHandler(messageDiv as HTMLElement);
+      this._attachMessageContextMenuHandler(messageDiv as HTMLElement);
+      this._attachCitationPopupListeners(messageDiv as HTMLElement);
+    });
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
       
         addUserMessage(text: string): void {
           const userMessageDiv = this.doc.createElementNS(
             "http://www.w3.org/1999/xhtml",
             "div",
-          );
+          ) as HTMLDivElement;
           userMessageDiv.className = "message user-message";
           userMessageDiv.innerHTML = this.renderMarkdown(text);
+          userMessageDiv.dataset.rawText = text;
           this.chatMessages.appendChild(userMessageDiv);
           this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
+          this._attachMessageContextMenuHandler(userMessageDiv as HTMLElement);
           this._attachCitationPopupListeners(userMessageDiv as HTMLElement); // 追加
           this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
         }
@@ -489,7 +536,11 @@ export class UIManager {
           ) as HTMLDivElement;
           div.className = `message ${className}`;
           div.innerHTML = html;
+          div.dataset.rawText = html;
           this.chatMessages.appendChild(div);
+          this._attachMiddleClickHandler(div as HTMLElement);
+          this._attachMessageContextMenuHandler(div as HTMLElement);
+          this._attachCitationPopupListeners(div as HTMLElement);
           this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
           return div;
         };
@@ -545,7 +596,9 @@ export class UIManager {
             }
           }
           element.innerHTML = messageHtml;
+          element.dataset.rawText = responseText || "";
           this._attachMiddleClickHandler(element as HTMLElement);
+          this._attachMessageContextMenuHandler(element as HTMLElement);
           this._attachCitationPopupListeners(element as HTMLElement); // 追加
           this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
         };
@@ -564,6 +617,10 @@ export class UIManager {
          * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
          */
         private _attachMiddleClickHandler(messageElement: HTMLElement): void {
+          if (messageElement.dataset.middleClickAttached === "true") {
+            return;
+          }
+          messageElement.dataset.middleClickAttached = "true";
           messageElement.addEventListener('mouseup', (event: MouseEvent) => {
             if (event.button === 1) { // Middle mouse button
               event.preventDefault();
@@ -586,12 +643,162 @@ export class UIManager {
             }
           });
         }
+
+        private _initMessageContextMenuEvents(): void {
+          this.messageContextMenu.addEventListener("click", async (event: Event) => {
+            const target = event.target as HTMLElement;
+            const button = target.closest(".message-context-menu-item") as HTMLElement | null;
+            if (!button) return;
+            const action = button.dataset.action;
+            if (action === "copy-plain-text") {
+              await this._copyContextMenuTargetMessage("plain");
+            } else if (action === "copy-markdown") {
+              await this._copyContextMenuTargetMessage("markdown");
+            } else if (action === "copy-selection") {
+              await this._copySelectedTextInTargetMessage();
+            }
+            this._hideMessageContextMenu();
+          });
+
+          this.doc.addEventListener("click", () => this._hideMessageContextMenu());
+          this.doc.addEventListener("keydown", (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+              this._hideMessageContextMenu();
+            }
+          });
+        }
+
+        private _attachMessageContextMenuHandler(messageElement: HTMLElement): void {
+          if (messageElement.dataset.contextMenuAttached === "true") {
+            return;
+          }
+          messageElement.dataset.contextMenuAttached = "true";
+          messageElement.addEventListener("contextmenu", (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            this.contextMenuTargetMessage = messageElement;
+            this._showMessageContextMenu(event.clientX, event.clientY);
+          });
+        }
+
+        private _showMessageContextMenu(x: number, y: number): void {
+          const hasSelectionInTarget = this._hasTextSelectionInTargetMessage();
+          const menuItems = this.messageContextMenu.querySelectorAll(
+            ".message-context-menu-item",
+          ) as NodeListOf<HTMLElement>;
+
+          // Whole-message actions are shown only when no range selection exists.
+          menuItems.forEach((item: HTMLElement) => {
+            const action = item.dataset.action;
+            if (action === "copy-selection") {
+              item.style.display = hasSelectionInTarget ? "" : "none";
+            } else {
+              item.style.display = hasSelectionInTarget ? "none" : "";
+            }
+          });
+
+          let hasVisibleItems = false;
+          for (const item of menuItems) {
+            if (item.style.display !== "none") {
+              hasVisibleItems = true;
+              break;
+            }
+          }
+          if (!hasVisibleItems) {
+            this._hideMessageContextMenu();
+            return;
+          }
+
+          this.messageContextMenu.style.left = `${x}px`;
+          this.messageContextMenu.style.top = `${y}px`;
+          this.messageContextMenu.style.display = "block";
+        }
+
+        private _hideMessageContextMenu(): void {
+          this.messageContextMenu.style.display = "none";
+          this.contextMenuTargetMessage = null;
+        }
+
+        private _hasTextSelectionInTargetMessage(): boolean {
+          if (!this.contextMenuTargetMessage) return false;
+          const selection = this.doc.defaultView?.getSelection();
+          if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+            return false;
+          }
+
+          const selectedText = selection.toString().trim();
+          if (!selectedText) return false;
+
+          const range = selection.getRangeAt(0);
+          const elementNodeType = this.doc.defaultView?.Node?.ELEMENT_NODE ?? 1;
+          const commonAncestor =
+            range.commonAncestorContainer.nodeType === elementNodeType
+              ? (range.commonAncestorContainer as Element)
+              : range.commonAncestorContainer.parentElement;
+          if (!commonAncestor) return false;
+
+          return this.contextMenuTargetMessage.contains(commonAncestor);
+        }
+
+        private async _copySelectedTextInTargetMessage(): Promise<void> {
+          if (!this._hasTextSelectionInTargetMessage()) return;
+          const selection = this.doc.defaultView?.getSelection();
+          const text = selection?.toString() || "";
+          if (!text.trim()) return;
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch (_e) {
+            const temp = this.doc.createElementNS(
+              "http://www.w3.org/1999/xhtml",
+              "textarea",
+            ) as HTMLTextAreaElement;
+            temp.value = text;
+            this.body.appendChild(temp);
+            temp.select();
+            this.doc.execCommand("copy");
+            temp.remove();
+          }
+        }
+
+        private async _copyContextMenuTargetMessage(
+          format: "plain" | "markdown",
+        ): Promise<void> {
+          if (!this.contextMenuTargetMessage) return;
+          const plainText = (() => {
+            // Exclude model thoughts from plain text copy output.
+            const clone = this.contextMenuTargetMessage!.cloneNode(true) as HTMLElement;
+            clone
+              .querySelectorAll(".thoughts-container")
+              .forEach((element: Element) => {
+              element.remove();
+              });
+            return clone.textContent || "";
+          })();
+          const markdownText =
+            this.contextMenuTargetMessage.dataset.rawText || plainText;
+          const text = format === "plain" ? plainText : markdownText;
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch (_e) {
+            // Fallback for environments where Clipboard API is unavailable.
+            const temp = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "textarea") as HTMLTextAreaElement;
+            temp.value = text;
+            this.body.appendChild(temp);
+            temp.select();
+            this.doc.execCommand("copy");
+            temp.remove();
+          }
+        }
       
         /**
          * Attaches mouse event listeners to citation containers within a message element
          * to display a custom popup with the original raw text.
          */
         private _attachCitationPopupListeners(messageElement: HTMLElement): void {
+          if (messageElement.dataset.citationPopupAttached === "true") {
+            return;
+          }
+          messageElement.dataset.citationPopupAttached = "true";
           const citationContainers = messageElement.querySelectorAll('.citation-container');
           citationContainers.forEach((container: Element) => {
             container.addEventListener('mouseenter', (event: MouseEvent) => {
