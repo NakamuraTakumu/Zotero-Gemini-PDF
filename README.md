@@ -1,12 +1,66 @@
-# Zotero Gemini PDFプラグイン：AIでPDF操作を革新
+# Gemini PDF
 
-Googleの強力なGemini AIをZotero PDFリーダーにシームレスに統合するZotero Gemini PDFプラグインで、あなたの研究ワークフローを変革しましょう。これまでにない方法でドキュメントと対話し、瞬時の洞察を得て、理解を深めることができます。
+Gemini PDF is a Zotero plugin that adds a Gemini-powered chat panel to the
+Zotero PDF reader.
 
-## 主な利点と機能
+The plugin is focused on in-reader workflows: you can ask questions about the
+current PDF, send selected text to Gemini, and keep chat history attached to
+the Zotero item.
 
-- **対話型AIチャットインターフェース**: ZoteroのPDFリーダー内に専用のチャットパネルが用意されており、PDFを深く掘り下げることができます。質問をしたり、説明を得たり、動的で会話形式でコンテンツを探索したりできます。まるで親切なアシスタントとメッセージをやり取りするようです。
-- **PDFテキストからのワンクリック質問**: PDF内で興味深い文章を見つけたら、ハイライトしてワンクリックするだけでGemini AIに質問を投げかけることができます。これにより、疑問を即座に解消し、読解を深めることが可能です。
-- **自動的で永続的なチャット履歴**: 貴重な会話を見失うことはありません。すべてのAIインタラクションは、それぞれのZoteroアイテムに直接リンクされた整理されたJSON添付ファイルとして自動的に保存されるため、継続性が保証され、将来の参照のために簡単に取得できます。
-- **豊かな表現力 (KaTeX & Markdown対応)**: AIからの応答は、KaTeXとMarkdownのサポートにより、学術的な数式や複雑な情報を美しく、分かりやすい形式で直接チャットパネル内に表示します。
+> [!IMPORTANT]
+> This project is being developed with Codex assistance and is still under
+> active iteration. Review behavior and outputs carefully before relying on it
+> in production or research workflows.
 
-Zotero Gemini PDFプラグインで、PDF操作と研究効率の新たな次元を切り開きましょう！
+![Gemini PDF screenshot](./image.png)
+
+## Current capabilities
+
+- Adds a chat pane to the Zotero PDF reader
+- Automatically uploads and synchronizes PDF attachments with the Gemini File
+  API when chat starts
+- Sends free-form prompts to Gemini from inside Zotero
+- Lets you ask about selected text from the reader context menu
+- Stores chat sessions as JSON attachments on the related Zotero item
+- Renders responses with Markdown and KaTeX support
+- Supports configurable API key, system prompt, model list, title generation,
+  and chat history limit
+
+## How it works
+
+When a chat starts, the plugin automatically uploads and synchronizes the PDF
+attachments of the current Zotero item with the Gemini File API. Metadata for
+uploaded files is stored as a Zotero attachment so the plugin can reuse
+existing Gemini files when possible.
+
+## Setup
+
+1. Build or install the plugin in Zotero.
+2. Open Zotero Preferences and find `Gemini PDF Settings`.
+3. Set your Gemini API key.
+4. Optionally adjust:
+   - system prompt
+   - prompt used for selected text
+   - available model list
+   - title generation model and prompt
+   - chat history limit
+
+## Development
+
+```bash
+npm install
+npm run start
+```
+
+For a production build:
+
+```bash
+npm run build
+```
+
+## Notes
+
+- A valid Gemini API key is required.
+- PDF files may be uploaded to Gemini in order to provide document context.
+- This repository is based on the Zotero plugin template and is still under
+  active development.
