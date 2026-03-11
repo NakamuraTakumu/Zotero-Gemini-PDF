@@ -13,13 +13,13 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/windingwind/zotero-plugin-template.git"
+    "url": "git+https://github.com/NakamuraTakumu/Zotero-Gemini-PDF.git"
   },
-  "author": "windingwind",
+  "author": "Takumu Nakamura",
   "bugs": {
-    "url": "https://github.com/windingwind/zotero-plugin-template/issues"
+    "url": "https://github.com/NakamuraTakumu/Zotero-Gemini-PDF/issues"
   },
-  "homepage": "https://github.com/windingwind/zotero-plugin-template#readme",
+  "homepage": "https://github.com/NakamuraTakumu/Zotero-Gemini-PDF#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
     "start": "zotero-plugin serve",
