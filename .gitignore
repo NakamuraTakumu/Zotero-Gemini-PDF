@@ -21,3 +21,4 @@ logs
 typings
 zotero-dev-data
 zotero-dev-profile
+.gitignore
