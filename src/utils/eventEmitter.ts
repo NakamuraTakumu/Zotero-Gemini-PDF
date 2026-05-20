@@ -1,31 +1,47 @@
-// src/utils/eventEmitter.ts
-class EventEmitter {
-    private listeners: { [event: string]: Function[] } = {};
+type EventListener<Args extends unknown[]> = (
+  ...args: Args
+) => void | Promise<void>;
 
-    on(event: string, listener: Function): void {
-        if (!this.listeners[event]) {
-            this.listeners[event] = [];
-        }
-        this.listeners[event].push(listener);
-    }
+class EventEmitter<
+  Events extends Record<keyof Events, unknown[]> = Record<string, unknown[]>,
+> {
+  private listeners: {
+    [EventName in keyof Events]?: EventListener<Events[EventName]>[];
+  } = {};
 
-    off(event: string, listener: Function): void {
-        if (!this.listeners[event]) {
-            return;
-        }
-        this.listeners[event] = this.listeners[event].filter(
-            (l) => l !== listener,
-        );
+  on<EventName extends keyof Events>(
+    event: EventName,
+    listener: EventListener<Events[EventName]>,
+  ): void {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
     }
+    this.listeners[event].push(listener);
+  }
 
-    emit(event: string, ...args: any[]): void {
-        if (!this.listeners[event]) {
-            return;
-        }
-        this.listeners[event].forEach((listener) => {
-            listener(...args);
-        });
+  off<EventName extends keyof Events>(
+    event: EventName,
+    listener: EventListener<Events[EventName]>,
+  ): void {
+    if (!this.listeners[event]) {
+      return;
     }
+    this.listeners[event] = this.listeners[event].filter(
+      (registeredListener) => registeredListener !== listener,
+    );
+  }
+
+  emit<EventName extends keyof Events>(
+    event: EventName,
+    ...args: Events[EventName]
+  ): void {
+    if (!this.listeners[event]) {
+      return;
+    }
+    this.listeners[event].forEach((listener) => {
+      void listener(...args);
+    });
+  }
 }
 
 export default EventEmitter;

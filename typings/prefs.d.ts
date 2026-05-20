@@ -7,15 +7,23 @@
 declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
+      "llmProvider": string;
       "geminiApiKey": string;
+      "openaiApiKey": string;
+      "anthropicApiKey": string;
       "geminiSystemPrompt": string;
       "contextWindowSize": number;
       "promptForSelection": string;
       "geminiModelList": string;
+      "openaiModelList": string;
+      "anthropicModelList": string;
       "geminiSelectedModel": string;
+      "openaiSelectedModel": string;
+      "anthropicSelectedModel": string;
       "geminiUseGoogleSearch": boolean;
-      "includeThoughts": boolean;
+      "reasoningMode": string;
       "chatPanelHeight": number;
+      "titleGenerationProvider": string;
       "titleGenerationModel": string;
       "titleGenerationPrompt": string;
     };

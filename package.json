@@ -32,11 +32,16 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@langchain/anthropic": "^1.4.0",
+    "@langchain/core": "^1.1.47",
+    "@langchain/google": "^0.1.12",
+    "@langchain/openai": "^1.4.6",
     "@vscode/markdown-it-katex": "^1.1.2",
     "dompurify": "^3.0.0",
     "katex": "^0.16.0",
     "markdown-it-collapsible": "^2.0.2",
     "markdown-it-container": "^4.0.0",
+    "openai": "^6.38.0",
     "uuid": "^13.0.0",
     "zotero-plugin-toolkit": "^5.1.0-beta.13"
   },

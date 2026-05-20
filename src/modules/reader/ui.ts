@@ -1,10 +1,19 @@
 import { getPref, setPref } from "../../utils/prefs";
+import { stripThoughtsFromText } from "../../utils/thoughts";
 import {
-  PREF_MODEL_LIST,
-  PREF_SELECTED_MODEL,
-  PREF_USE_GOOGLE_SEARCH,
-  PREF_INCLUDE_THOUGHTS,
+  PREF_LLM_PROVIDER,
+  PREF_REASONING_MODE,
+  PREF_USE_WEB_SEARCH,
 } from "../../utils/constants";
+import { PROVIDERS, PROVIDER_CONFIGS } from "../../utils/providerConfig";
+import {
+  getProviderModelList,
+  getSelectedModel,
+  getSelectedProvider,
+  setSelectedModel,
+  setSelectedProvider,
+} from "../llm/provider";
+import { LlmCitation, ProviderId } from "../../types/chat";
 
 import { ChatSessionManager } from "./chatSessionManager";
 import { ChatSession } from "./chatSession";
@@ -204,39 +213,49 @@ export class UIManager {
   }
 
   registerPrefObservers() {
-    const modelObserverKey = Zotero.Prefs.registerObserver(
-      `extensions.zotero.GeminiPDF.${PREF_SELECTED_MODEL}`,
+    const providerObserverKey = Zotero.Prefs.registerObserver(
+      `extensions.zotero.GeminiPDF.${PREF_LLM_PROVIDER}`,
       () => {
-        const geminiModelSelect = this.body.querySelector(
-          "#gemini-model-select",
-        ) as HTMLSelectElement;
-        if (geminiModelSelect) {
-          const selectedModel = getPref(PREF_SELECTED_MODEL) || "";
-          geminiModelSelect.value = selectedModel;
-          Zotero.log(
-            `[Gemini PDF] Pref observer updated model selection to: ${selectedModel}`,
-          );
-        }
+        this.refreshProviderControls();
       },
     );
-    this.prefObserverKeys.push(modelObserverKey);
+    this.prefObserverKeys.push(providerObserverKey);
 
-    const searchObserverKey = Zotero.Prefs.registerObserver(
-      `extensions.zotero.GeminiPDF.${PREF_USE_GOOGLE_SEARCH}`,
+    PROVIDERS.forEach((provider) => {
+      const prefKey = PROVIDER_CONFIGS[provider].selectedModelPref;
+      const modelObserverKey = Zotero.Prefs.registerObserver(
+        `extensions.zotero.GeminiPDF.${prefKey}`,
+        () => {
+          this.initModelSelector();
+        },
+      );
+      this.prefObserverKeys.push(modelObserverKey);
+    });
+
+    const webSearchObserverKey = Zotero.Prefs.registerObserver(
+      `extensions.zotero.GeminiPDF.${PREF_USE_WEB_SEARCH}`,
       () => {
-        const useGoogleSearchCheckbox = this.body.querySelector(
-          "#use-google-search-checkbox",
+        const useWebSearchCheckbox = this.body.querySelector(
+          "#use-web-search-checkbox",
         ) as HTMLInputElement;
-        if (useGoogleSearchCheckbox) {
-          const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
-          useGoogleSearchCheckbox.checked = useGoogleSearch;
+        if (useWebSearchCheckbox) {
+          const useWebSearch = getPref(PREF_USE_WEB_SEARCH) as boolean;
+          useWebSearchCheckbox.checked = useWebSearch;
           Zotero.log(
-            `[Gemini PDF] Pref observer updated Google Search to: ${useGoogleSearch}`,
+            `[Gemini PDF] Pref observer updated Web Search to: ${useWebSearch}`,
           );
         }
       },
     );
-    this.prefObserverKeys.push(searchObserverKey);
+    this.prefObserverKeys.push(webSearchObserverKey);
+
+    const reasoningModeObserverKey = Zotero.Prefs.registerObserver(
+      `extensions.zotero.GeminiPDF.${PREF_REASONING_MODE}`,
+      () => {
+        this.initReasoningModeSelector();
+      },
+    );
+    this.prefObserverKeys.push(reasoningModeObserverKey);
   }
 
   private unregisterPrefObservers() {
@@ -247,26 +266,47 @@ export class UIManager {
     this.prefObserverKeys = [];
   }
 
-  initModelSelector() {
-    const geminiModelSelect = this.body.querySelector(
-      "#gemini-model-select",
+  initProviderSelector() {
+    const providerSelect = this.body.querySelector(
+      "#llm-provider-select",
     ) as HTMLSelectElement;
-    if (!geminiModelSelect) return;
+    if (!providerSelect) return;
 
-    const availableModelsString = getPref(PREF_MODEL_LIST) || "";
-    const availableModels = availableModelsString
-      .split(",")
-      .map((m) => m.trim())
-      .filter((m) => m.length > 0);
-    const selectedModel = getPref(PREF_SELECTED_MODEL) || "";
+    const selectedProvider = getSelectedProvider();
+    providerSelect.value = selectedProvider;
+    providerSelect.onchange = (e) => {
+      const provider = (e.target as HTMLSelectElement).value as ProviderId;
+      setSelectedProvider(provider);
+      this.refreshProviderControls();
+      Zotero.log(`[Gemini PDF] UI: Provider changed to: ${provider}.`);
+    };
+    this.refreshProviderControls();
+  }
+
+  private refreshProviderControls() {
+    const providerSelect = this.body.querySelector(
+      "#llm-provider-select",
+    ) as HTMLSelectElement;
+    if (providerSelect) {
+      providerSelect.value = getSelectedProvider();
+    }
+    this.initModelSelector();
+  }
+
+  initModelSelector() {
+    const modelSelect = this.body.querySelector(
+      "#llm-model-select",
+    ) as HTMLSelectElement;
+    if (!modelSelect) return;
+
+    const provider = getSelectedProvider();
+    const availableModels = getProviderModelList(provider);
+    const selectedModel = getSelectedModel(provider);
     Zotero.log(
-      `[Gemini PDF] UI: Initializing model selector. Saved PREF_SELECTED_MODEL value is: '${selectedModel}'.`,
-    );
-    Zotero.log(
-      `[Gemini PDF] UI: Currently selected model from preferences: '${selectedModel}'.`,
+      `[Gemini PDF] UI: Initializing model selector. Provider=${provider}, selected='${selectedModel}'.`,
     );
 
-    geminiModelSelect.innerHTML = "";
+    modelSelect.innerHTML = "";
     availableModels.forEach((modelName) => {
       const option = this.doc.createElementNS(
         "http://www.w3.org/1999/xhtml",
@@ -277,56 +317,63 @@ export class UIManager {
       if (modelName === selectedModel) {
         option.selected = true;
       }
-      geminiModelSelect.appendChild(option);
+      modelSelect.appendChild(option);
     });
 
-    geminiModelSelect.addEventListener("change", (e) => {
+    if (selectedModel && !availableModels.includes(selectedModel)) {
+      const option = this.doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "option",
+      ) as HTMLOptionElement;
+      option.value = selectedModel;
+      option.textContent = selectedModel;
+      option.selected = true;
+      modelSelect.appendChild(option);
+    }
+
+    modelSelect.onchange = (e) => {
       const newValue = (e.target as HTMLSelectElement).value;
       Zotero.log(`[Gemini PDF] UI: Model selection changed to: ${newValue}.`);
-      setPref(PREF_SELECTED_MODEL, newValue);
-      const retrievedValue = getPref(PREF_SELECTED_MODEL);
-      Zotero.log(
-        `[Gemini PDF] UI: Immediately after setPref, getPref returns: ${retrievedValue}.`,
-      );
+      setSelectedModel(getSelectedProvider(), newValue);
+    };
+  }
+
+  initWebSearchCheckbox() {
+    const useWebSearchCheckbox = this.body.querySelector(
+      "#use-web-search-checkbox",
+    ) as HTMLInputElement;
+    if (!useWebSearchCheckbox) return;
+
+    const useWebSearch = getPref(PREF_USE_WEB_SEARCH) as boolean;
+    Zotero.log(
+      `[Gemini PDF] UI: Initializing Web Search checkbox. Saved PREF_USE_WEB_SEARCH value is: ${useWebSearch}.`,
+    );
+    useWebSearchCheckbox.checked = useWebSearch;
+
+    useWebSearchCheckbox.addEventListener("change", (e) => {
+      const newValue = (e.target as HTMLInputElement).checked;
+      setPref(PREF_USE_WEB_SEARCH, newValue);
+      Zotero.log(`[Gemini PDF] UI: Use Web Search changed to: ${newValue}.`);
     });
   }
 
-  initGoogleSearchCheckbox() {
-    const useGoogleSearchCheckbox = this.body.querySelector(
-      "#use-google-search-checkbox",
-    ) as HTMLInputElement;
-    if (!useGoogleSearchCheckbox) return; // Added null check
+  initReasoningModeSelector() {
+    const reasoningModeSelect = this.body.querySelector(
+      "#reasoning-mode-select",
+    ) as HTMLSelectElement;
+    if (!reasoningModeSelect) return;
 
-    const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
+    const reasoningMode = (getPref(PREF_REASONING_MODE) as string) || "off";
     Zotero.log(
-      `[Gemini PDF] UI: Initializing Google Search checkbox. Saved PREF_USE_GOOGLE_SEARCH value is: ${useGoogleSearch}.`,
+      `[Gemini PDF] UI: Initializing Thinking selector. Saved PREF_REASONING_MODE value is: ${reasoningMode}.`,
     );
-    useGoogleSearchCheckbox.checked = useGoogleSearch;
+    reasoningModeSelect.value = reasoningMode;
 
-    useGoogleSearchCheckbox.addEventListener("change", (e) => {
-      const newValue = (e.target as HTMLInputElement).checked;
-      setPref(PREF_USE_GOOGLE_SEARCH, newValue);
-      Zotero.log(`[Gemini PDF] UI: Use Google Search changed to: ${newValue}.`);
-    });
-  }
-
-  initIncludeThoughtsCheckbox() {
-    const includeThoughtsCheckbox = this.body.querySelector(
-      "#include-thoughts-checkbox",
-    ) as HTMLInputElement;
-    if (!includeThoughtsCheckbox) return;
-
-    const includeThoughts = getPref(PREF_INCLUDE_THOUGHTS) as boolean;
-    Zotero.log(
-      `[Gemini PDF] UI: Initializing Include Thoughts checkbox. Saved PREF_INCLUDE_THOUGHTS value is: ${includeThoughts}.`,
-    );
-    includeThoughtsCheckbox.checked = includeThoughts;
-
-    includeThoughtsCheckbox.addEventListener("change", (e) => {
-      const newValue = (e.target as HTMLInputElement).checked;
-      setPref(PREF_INCLUDE_THOUGHTS, newValue);
-      Zotero.log(`[Gemini PDF] UI: Include Thoughts changed to: ${newValue}.`);
-    });
+    reasoningModeSelect.onchange = (e) => {
+      const newValue = (e.target as HTMLSelectElement).value;
+      setPref(PREF_REASONING_MODE, newValue);
+      Zotero.log(`[Gemini PDF] UI: Thinking mode changed to: ${newValue}.`);
+    };
   }
 
   initSessionSwitcher() {
@@ -355,16 +402,23 @@ export class UIManager {
   }
 
   renderSessionSwitcherList() {
-    const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
+    const sessionSwitcher = this.body.querySelector(
+      "#chat-session-switcher",
+    ) as HTMLSelectElement;
     if (!sessionSwitcher) return;
-    
+
     const sessions = this.chatSessionManager.getAllSessions();
-    Zotero.log(`[Gemini PDF] UIManager.renderSessionSwitcherList: Rendering ${sessions.length} sessions.`);
+    Zotero.log(
+      `[Gemini PDF] UIManager.renderSessionSwitcherList: Rendering ${sessions.length} sessions.`,
+    );
 
     sessionSwitcher.innerHTML = "";
 
-    sessions.forEach(session => {
-      const option = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "option") as HTMLOptionElement;
+    sessions.forEach((session) => {
+      const option = this.doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "option",
+      ) as HTMLOptionElement;
       option.value = session.id;
       option.textContent = this._formatSessionTitleForSwitcher(session.title);
       option.title = session.title;
@@ -373,13 +427,17 @@ export class UIManager {
   }
 
   updateSessionSwitcherSelection() {
-    const sessionSwitcher = this.body.querySelector("#chat-session-switcher") as HTMLSelectElement;
+    const sessionSwitcher = this.body.querySelector(
+      "#chat-session-switcher",
+    ) as HTMLSelectElement;
     if (!sessionSwitcher) return;
 
     const activeSession = this.chatSessionManager.getActiveSession();
     if (activeSession) {
       sessionSwitcher.value = activeSession.id;
-      Zotero.log(`[Gemini PDF] UIManager.updateSessionSwitcherSelection: Selected session ID: ${activeSession.id}`);
+      Zotero.log(
+        `[Gemini PDF] UIManager.updateSessionSwitcherSelection: Selected session ID: ${activeSession.id}`,
+      );
     }
   }
 
@@ -458,51 +516,25 @@ export class UIManager {
         "http://www.w3.org/1999/xhtml",
         "div",
       ) as HTMLDivElement;
-      const roleClass = message.role === "model" ? "bot-message" : "user-message";
+      const roleClass =
+        message.role === "model" ? "bot-message" : "user-message";
       messageDiv.className = `message ${roleClass}`;
-      let messageHtml = this.renderMarkdown(message.parts[0].text);
-      if (message.role === "model" && message.thoughts && message.thoughts.length > 0) {
-        const thoughtsHtml = message.thoughts
-          .flatMap(t => t.split('\n'))
-          .filter(line => line.trim() !== '')
-          .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
-          .join("");
-        messageHtml =
-          `<details class="thoughts-container"><summary>モデル思考</summary>${thoughtsHtml}</details>` +
-          messageHtml;
-      }
-      if (message.role === "model" && message.groundingMetadata) {
-        let sources = "";
-        if (
-          message.groundingMetadata.groundingChunks &&
-          message.groundingMetadata.groundingChunks.length > 0
-        ) {
-          sources = message.groundingMetadata.groundingChunks
-            .map((chunk: any, index: number) => {
-              if (chunk.web) {
-                return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
-              }
-              return null;
-            })
-            .filter(Boolean)
-            .join("");
-        } else if (
-          message.groundingMetadata.retrievedReferences &&
-          message.groundingMetadata.retrievedReferences.length > 0
-        ) {
-          sources = message.groundingMetadata.retrievedReferences
-            .map(
-              (ref: any, index: number) =>
-                `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`,
-            )
-            .join("");
-        }
-        if (sources) {
-          messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
-        }
+      const displayText =
+        message.role === "model"
+          ? stripThoughtsFromText(message.parts[0].text, message.thoughts)
+          : message.parts[0].text;
+      let messageHtml = this.renderMarkdown(displayText);
+      if (message.role === "model") {
+        messageHtml += this.renderMessageDetails(
+          message.provider,
+          message.model,
+          message.thoughts,
+          message.citations,
+          message.groundingMetadata,
+        );
       }
       messageDiv.innerHTML = messageHtml;
-      messageDiv.dataset.rawText = message.parts[0].text || "";
+      messageDiv.dataset.rawText = displayText || "";
       this.chatMessages.appendChild(messageDiv);
       this._attachMiddleClickHandler(messageDiv as HTMLElement);
       this._attachMessageContextMenuHandler(messageDiv as HTMLElement);
@@ -510,318 +542,439 @@ export class UIManager {
     });
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   }
-      
-        addUserMessage(text: string): void {
-          const userMessageDiv = this.doc.createElementNS(
-            "http://www.w3.org/1999/xhtml",
-            "div",
-          ) as HTMLDivElement;
-          userMessageDiv.className = "message user-message";
-          userMessageDiv.innerHTML = this.renderMarkdown(text);
-          userMessageDiv.dataset.rawText = text;
-          this.chatMessages.appendChild(userMessageDiv);
-          this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
-          this._attachMessageContextMenuHandler(userMessageDiv as HTMLElement);
-          this._attachCitationPopupListeners(userMessageDiv as HTMLElement); // 追加
-          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-        }
-      
-        addBotMessage = (
-          html: string,
-          className: string = "bot-message",
-        ): HTMLDivElement => {
-          const div = this.doc.createElementNS(
-            "http://www.w3.org/1999/xhtml",
-            "div",
-          ) as HTMLDivElement;
-          div.className = `message ${className}`;
-          div.innerHTML = html;
-          div.dataset.rawText = html;
-          this.chatMessages.appendChild(div);
-          this._attachMiddleClickHandler(div as HTMLElement);
-          this._attachMessageContextMenuHandler(div as HTMLElement);
-          this._attachCitationPopupListeners(div as HTMLElement);
-          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-          return div;
-        };
-      
-        updateBotMessage = (
-          element: HTMLDivElement,
-          responseText: string,
-          thoughts?: string[],
-          groundingMetadata?: any,
-        ) => {
-          let messageHtml = this.renderMarkdown(responseText || "No response.");
-      
-          if (thoughts && thoughts.length > 0) {
-            const thoughtsHtml = thoughts
-              .flatMap(t => t.split('\n')) // Split multi-line thoughts into an array of single lines
-              .filter(line => line.trim() !== '') // Remove any empty lines
-              .map((line) => `<div class="thought">${this.renderMarkdown(line)}</div>`)
-              .join("");
-            messageHtml =
-              `<details class="thoughts-container"><summary>モデル思考</summary>${thoughtsHtml}</details>` +
-              messageHtml;
-          }
-      
-          if (groundingMetadata) {
-            let sources = "";
-            if (
-              groundingMetadata.groundingChunks &&
-              groundingMetadata.groundingChunks.length > 0
-            ) {
-              sources = groundingMetadata.groundingChunks
-                .map((chunk: any, index: number) => {
-                  if (chunk.web) {
-                    return `<a href="${chunk.web.uri}" target="_blank">[${index + 1}] ${chunk.web.title}</a>`;
-                  }
-                  return null;
-                })
-                .filter(Boolean)
-                .join("");
-            } else if (
-              groundingMetadata.retrievedReferences &&
-              groundingMetadata.retrievedReferences.length > 0
-            ) {
-              sources = groundingMetadata.retrievedReferences
-                .map(
-                  (ref: any, index: number) =>
-                    `<a href="${ref.uri}" target="_blank">[${index + 1}] ${ref.title}</a>`,
-                )
-                .join("");
-            }
-      
-            if (sources) {
-              messageHtml += `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
-            }
-          }
-          element.innerHTML = messageHtml;
-          element.dataset.rawText = responseText || "";
-          this._attachMiddleClickHandler(element as HTMLElement);
-          this._attachMessageContextMenuHandler(element as HTMLElement);
-          this._attachCitationPopupListeners(element as HTMLElement); // 追加
-          this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
-        };
-      
-        setInputsDisabled(disabled: boolean): void {
-          this.chatInput.disabled = disabled;
-          this.sendButton.disabled = disabled;
-        }
-      
-        clearChatInput(): void {
-          this.chatInput.value = "";
-          this.chatInput.focus();
-        }
-      
-        /**
-         * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
-         */
-        private _attachMiddleClickHandler(messageElement: HTMLElement): void {
-          if (messageElement.dataset.middleClickAttached === "true") {
-            return;
-          }
-          messageElement.dataset.middleClickAttached = "true";
-          messageElement.addEventListener('mouseup', (event: MouseEvent) => {
-            if (event.button === 1) { // Middle mouse button
-              event.preventDefault();
-              event.stopPropagation();
-              const detailsElements = messageElement.querySelectorAll('details:not(.thoughts-container)');
-              let anyClosed = false;
-              detailsElements.forEach((details: HTMLDetailsElement) => {
-                if (!details.open) {
-                  anyClosed = true;
-                }
-              });
-      
-              detailsElements.forEach((details: HTMLDetailsElement) => {
-                if (anyClosed) {
-                  details.open = true; // 閉じているものがあれば全て開く
-                } else {
-                  details.open = false; // 全て開いていれば全て閉じる
-                }
-              });
-            }
-          });
-        }
 
-        private _initMessageContextMenuEvents(): void {
-          this.messageContextMenu.addEventListener("click", async (event: Event) => {
-            const target = event.target as HTMLElement;
-            const button = target.closest(".message-context-menu-item") as HTMLElement | null;
-            if (!button) return;
-            const action = button.dataset.action;
-            if (action === "copy-plain-text") {
-              await this._copyContextMenuTargetMessage("plain");
-            } else if (action === "copy-markdown") {
-              await this._copyContextMenuTargetMessage("markdown");
-            } else if (action === "copy-selection") {
-              await this._copySelectedTextInTargetMessage();
-            }
-            this._hideMessageContextMenu();
-          });
+  addUserMessage(text: string): void {
+    const userMessageDiv = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div",
+    ) as HTMLDivElement;
+    userMessageDiv.className = "message user-message";
+    userMessageDiv.innerHTML = this.renderMarkdown(text);
+    userMessageDiv.dataset.rawText = text;
+    this.chatMessages.appendChild(userMessageDiv);
+    this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
+    this._attachMessageContextMenuHandler(userMessageDiv as HTMLElement);
+    this._attachCitationPopupListeners(userMessageDiv as HTMLElement); // 追加
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  }
 
-          this.doc.addEventListener("click", () => this._hideMessageContextMenu());
-          this.doc.addEventListener("keydown", (event: KeyboardEvent) => {
-            if (event.key === "Escape") {
-              this._hideMessageContextMenu();
-            }
-          });
-        }
+  addBotMessage = (
+    html: string,
+    className: string = "bot-message",
+  ): HTMLDivElement => {
+    const div = this.doc.createElementNS(
+      "http://www.w3.org/1999/xhtml",
+      "div",
+    ) as HTMLDivElement;
+    div.className = `message ${className}`;
+    div.innerHTML = html;
+    div.dataset.rawText = html;
+    this.chatMessages.appendChild(div);
+    this._attachMiddleClickHandler(div as HTMLElement);
+    this._attachMessageContextMenuHandler(div as HTMLElement);
+    this._attachCitationPopupListeners(div as HTMLElement);
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    return div;
+  };
 
-        private _attachMessageContextMenuHandler(messageElement: HTMLElement): void {
-          if (messageElement.dataset.contextMenuAttached === "true") {
-            return;
-          }
-          messageElement.dataset.contextMenuAttached = "true";
-          messageElement.addEventListener("contextmenu", (event: MouseEvent) => {
-            event.preventDefault();
-            event.stopPropagation();
-            this.contextMenuTargetMessage = messageElement;
-            this._showMessageContextMenu(event.clientX, event.clientY);
-          });
-        }
+  updateBotMessage = (
+    element: HTMLDivElement,
+    responseText: string,
+    thoughts?: string[],
+    groundingMetadata?: any,
+    citations?: LlmCitation[],
+    provider?: ProviderId,
+    model?: string,
+  ) => {
+    let messageHtml = this.renderMarkdown(responseText || "No response.");
+    messageHtml += this.renderMessageDetails(
+      provider,
+      model,
+      thoughts,
+      citations,
+      groundingMetadata,
+    );
+    element.innerHTML = messageHtml;
+    element.dataset.rawText = responseText || "";
+    this._attachMiddleClickHandler(element as HTMLElement);
+    this._attachMessageContextMenuHandler(element as HTMLElement);
+    this._attachCitationPopupListeners(element as HTMLElement); // 追加
+    this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+  };
 
-        private _showMessageContextMenu(x: number, y: number): void {
-          const hasSelectionInTarget = this._hasTextSelectionInTargetMessage();
-          const menuItems = this.messageContextMenu.querySelectorAll(
-            ".message-context-menu-item",
-          ) as NodeListOf<HTMLElement>;
+  private renderMessageDetails(
+    provider?: ProviderId,
+    model?: string,
+    thoughts?: string[],
+    citations?: LlmCitation[],
+    groundingMetadata?: any,
+  ): string {
+    const metadataHtml = this.renderModelMetadata(provider, model);
+    const thoughtsHtml = this.renderThoughts(thoughts);
+    const sourcesHtml = this.renderSources(citations, groundingMetadata);
+    if (!metadataHtml && !thoughtsHtml && !sourcesHtml) return "";
 
-          // Whole-message actions are shown only when no range selection exists.
-          menuItems.forEach((item: HTMLElement) => {
-            const action = item.dataset.action;
-            if (action === "copy-selection") {
-              item.style.display = hasSelectionInTarget ? "" : "none";
-            } else {
-              item.style.display = hasSelectionInTarget ? "none" : "";
-            }
-          });
+    const providerLabel = provider
+      ? this.formatProviderLabel(provider)
+      : "unknown";
+    const modelLabel = model || "unknown";
+    const normalizedCitations = this.getNormalizedCitations(
+      citations,
+      groundingMetadata,
+    );
+    const visibleThoughts = this.getVisibleThoughts(thoughts);
+    const counts = [
+      visibleThoughts.length > 0 ? `Think ${visibleThoughts.length}` : "",
+      normalizedCitations.length > 0
+        ? `Refs ${normalizedCitations.length}`
+        : "",
+    ].filter(Boolean);
+    const summary =
+      `Details · ${providerLabel} · ${modelLabel}` +
+      (counts.length > 0 ? ` · ${counts.join(" · ")}` : "");
+    return `<details class="message-details"><summary>${this.escapeHtml(summary)}</summary>${metadataHtml}${thoughtsHtml}${sourcesHtml}</details>`;
+  }
 
-          let hasVisibleItems = false;
-          for (const item of menuItems) {
-            if (item.style.display !== "none") {
-              hasVisibleItems = true;
-              break;
-            }
-          }
-          if (!hasVisibleItems) {
-            this._hideMessageContextMenu();
-            return;
-          }
+  private renderModelMetadata(provider?: ProviderId, model?: string): string {
+    if (!provider && !model) return "";
+    const providerLabel = provider
+      ? this.formatProviderLabel(provider)
+      : "unknown";
+    const modelLabel = model || "unknown";
+    return `<div class="message-model-metadata"><span>Provider</span><span>${this.escapeHtml(providerLabel)}</span><span>Model</span><span>${this.escapeHtml(modelLabel)}</span></div>`;
+  }
 
-          this.messageContextMenu.style.left = `${x}px`;
-          this.messageContextMenu.style.top = `${y}px`;
-          this.messageContextMenu.style.display = "block";
-        }
+  private formatProviderLabel(provider: ProviderId): string {
+    return PROVIDER_CONFIGS[provider].label;
+  }
 
-        private _hideMessageContextMenu(): void {
-          this.messageContextMenu.style.display = "none";
-          this.contextMenuTargetMessage = null;
-        }
+  private renderThoughts(thoughts?: string[]): string {
+    const visibleThoughts = this.getVisibleThoughts(thoughts);
+    if (visibleThoughts.length === 0) return "";
+    const thoughtHtml = visibleThoughts
+      .map(
+        (thought) =>
+          `<div class="thought">${this.renderMarkdown(thought)}</div>`,
+      )
+      .join("");
+    return `<section class="thoughts-container"><div class="message-detail-heading">Thinking (${visibleThoughts.length})</div>${thoughtHtml}</section>`;
+  }
 
-        private _hasTextSelectionInTargetMessage(): boolean {
-          if (!this.contextMenuTargetMessage) return false;
-          const selection = this.doc.defaultView?.getSelection();
-          if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
-            return false;
-          }
+  private renderSources(
+    citations?: LlmCitation[],
+    groundingMetadata?: any,
+  ): string {
+    const normalizedCitations = this.getNormalizedCitations(
+      citations,
+      groundingMetadata,
+    );
+    if (normalizedCitations.length === 0) return "";
 
-          const selectedText = selection.toString().trim();
-          if (!selectedText) return false;
+    const sources = normalizedCitations
+      .map((citation, index) => this.renderSourceLink(citation, index))
+      .join("");
+    return `<div class="sources-container"><b>参照元:</b>${sources}</div>`;
+  }
 
-          const range = selection.getRangeAt(0);
-          const elementNodeType = this.doc.defaultView?.Node?.ELEMENT_NODE ?? 1;
-          const commonAncestor =
-            range.commonAncestorContainer.nodeType === elementNodeType
-              ? (range.commonAncestorContainer as Element)
-              : range.commonAncestorContainer.parentElement;
-          if (!commonAncestor) return false;
+  private getVisibleThoughts(thoughts?: string[]): string[] {
+    return (thoughts || []).map((thought) => thought.trim()).filter(Boolean);
+  }
 
-          return this.contextMenuTargetMessage.contains(commonAncestor);
-        }
+  private getNormalizedCitations(
+    citations?: LlmCitation[],
+    groundingMetadata?: any,
+  ): LlmCitation[] {
+    return citations && citations.length > 0
+      ? citations
+      : this.getLegacyGroundingCitations(groundingMetadata);
+  }
 
-        private async _copySelectedTextInTargetMessage(): Promise<void> {
-          if (!this._hasTextSelectionInTargetMessage()) return;
-          const selection = this.doc.defaultView?.getSelection();
-          const text = selection?.toString() || "";
-          if (!text.trim()) return;
-          try {
-            await navigator.clipboard.writeText(text);
-          } catch (_e) {
-            const temp = this.doc.createElementNS(
-              "http://www.w3.org/1999/xhtml",
-              "textarea",
-            ) as HTMLTextAreaElement;
-            temp.value = text;
-            this.body.appendChild(temp);
-            temp.select();
-            this.doc.execCommand("copy");
-            temp.remove();
-          }
-        }
-
-        private async _copyContextMenuTargetMessage(
-          format: "plain" | "markdown",
-        ): Promise<void> {
-          if (!this.contextMenuTargetMessage) return;
-          const plainText = (() => {
-            // Exclude model thoughts from plain text copy output.
-            const clone = this.contextMenuTargetMessage!.cloneNode(true) as HTMLElement;
-            clone
-              .querySelectorAll(".thoughts-container")
-              .forEach((element: Element) => {
-              element.remove();
-              });
-            return clone.textContent || "";
-          })();
-          const markdownText =
-            this.contextMenuTargetMessage.dataset.rawText || plainText;
-          const text = format === "plain" ? plainText : markdownText;
-          try {
-            await navigator.clipboard.writeText(text);
-          } catch (_e) {
-            // Fallback for environments where Clipboard API is unavailable.
-            const temp = this.doc.createElementNS("http://www.w3.org/1999/xhtml", "textarea") as HTMLTextAreaElement;
-            temp.value = text;
-            this.body.appendChild(temp);
-            temp.select();
-            this.doc.execCommand("copy");
-            temp.remove();
-          }
-        }
-      
-        /**
-         * Attaches mouse event listeners to citation containers within a message element
-         * to display a custom popup with the original raw text.
-         */
-        private _attachCitationPopupListeners(messageElement: HTMLElement): void {
-          if (messageElement.dataset.citationPopupAttached === "true") {
-            return;
-          }
-          messageElement.dataset.citationPopupAttached = "true";
-          const citationContainers = messageElement.querySelectorAll('.citation-container');
-          citationContainers.forEach((container: Element) => {
-            container.addEventListener('mouseenter', (event: MouseEvent) => {
-              const originalQuote = (container as HTMLElement).dataset.originalQuote;
-              if (originalQuote) {
-                this.citationPopup.textContent = originalQuote;
-                this.citationPopup.style.left = `${event.clientX + 10}px`; // カーソルから少しずらす
-                this.citationPopup.style.top = `${event.clientY + 10}px`;
-                this.citationPopup.style.display = 'block';
+  private getLegacyGroundingCitations(groundingMetadata?: any): LlmCitation[] {
+    if (!groundingMetadata) return [];
+    if (Array.isArray(groundingMetadata.groundingChunks)) {
+      return groundingMetadata.groundingChunks
+        .map((chunk: any) =>
+          chunk?.web
+            ? {
+                title: chunk.web.title || chunk.web.uri || "Source",
+                url: chunk.web.uri,
+                provider: "gemini" as const,
               }
-            });
-      
-            container.addEventListener('mouseleave', () => {
-              this.citationPopup.style.display = 'none';
-            });
-      
-            // マウスが動いてもポップアップ位置を追従させる
-            container.addEventListener('mousemove', (event: MouseEvent) => {
-              if (this.citationPopup.style.display === 'block') {
-                this.citationPopup.style.left = `${event.clientX + 10}px`;
-                this.citationPopup.style.top = `${event.clientY + 10}px`;
-              }
-            });
-          });
-        }
+            : undefined,
+        )
+        .filter(Boolean) as LlmCitation[];
+    }
+    if (Array.isArray(groundingMetadata.retrievedReferences)) {
+      return groundingMetadata.retrievedReferences.map((ref: any) => ({
+        title: ref.title || ref.uri || "Source",
+        url: ref.uri,
+        provider: "gemini" as const,
+      }));
+    }
+    return [];
+  }
+
+  private renderSourceLink(citation: LlmCitation, index: number): string {
+    const label = this.escapeHtml(citation.title || citation.url || "Source");
+    const quote = citation.quote
+      ? ` title="${this.escapeHtml(citation.quote)}"`
+      : "";
+    if (citation.url && this.isSafeSourceUrl(citation.url)) {
+      return `<a href="${this.escapeHtml(citation.url)}" target="_blank" rel="noopener noreferrer"${quote}>[${index + 1}] ${label}</a>`;
+    }
+    return `<span${quote}>[${index + 1}] ${label}</span>`;
+  }
+
+  private isSafeSourceUrl(url: string): boolean {
+    return /^https?:\/\//i.test(url);
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return char;
       }
+    });
+  }
+
+  setInputsDisabled(disabled: boolean): void {
+    this.chatInput.disabled = disabled;
+    this.sendButton.disabled = disabled;
+  }
+
+  clearChatInput(): void {
+    this.chatInput.value = "";
+    this.chatInput.focus();
+  }
+
+  /**
+   * Attaches a middle-click handler to a message element to toggle all <details> elements within it.
+   */
+  private _attachMiddleClickHandler(messageElement: HTMLElement): void {
+    if (messageElement.dataset.middleClickAttached === "true") {
+      return;
+    }
+    messageElement.dataset.middleClickAttached = "true";
+    messageElement.addEventListener("mouseup", (event: MouseEvent) => {
+      if (event.button === 1) {
+        // Middle mouse button
+        event.preventDefault();
+        event.stopPropagation();
+        const detailsElements = messageElement.querySelectorAll("details");
+        let anyClosed = false;
+        detailsElements.forEach((details: HTMLDetailsElement) => {
+          if (!details.open) {
+            anyClosed = true;
+          }
+        });
+
+        detailsElements.forEach((details: HTMLDetailsElement) => {
+          if (anyClosed) {
+            details.open = true; // 閉じているものがあれば全て開く
+          } else {
+            details.open = false; // 全て開いていれば全て閉じる
+          }
+        });
+      }
+    });
+  }
+
+  private _initMessageContextMenuEvents(): void {
+    this.messageContextMenu.addEventListener("click", async (event: Event) => {
+      const target = event.target as HTMLElement;
+      const button = target.closest(
+        ".message-context-menu-item",
+      ) as HTMLElement | null;
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === "copy-plain-text") {
+        await this._copyContextMenuTargetMessage("plain");
+      } else if (action === "copy-markdown") {
+        await this._copyContextMenuTargetMessage("markdown");
+      } else if (action === "copy-selection") {
+        await this._copySelectedTextInTargetMessage();
+      }
+      this._hideMessageContextMenu();
+    });
+
+    this.doc.addEventListener("click", () => this._hideMessageContextMenu());
+    this.doc.addEventListener("keydown", (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        this._hideMessageContextMenu();
+      }
+    });
+  }
+
+  private _attachMessageContextMenuHandler(messageElement: HTMLElement): void {
+    if (messageElement.dataset.contextMenuAttached === "true") {
+      return;
+    }
+    messageElement.dataset.contextMenuAttached = "true";
+    messageElement.addEventListener("contextmenu", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.contextMenuTargetMessage = messageElement;
+      this._showMessageContextMenu(event.clientX, event.clientY);
+    });
+  }
+
+  private _showMessageContextMenu(x: number, y: number): void {
+    const hasSelectionInTarget = this._hasTextSelectionInTargetMessage();
+    const menuItems = this.messageContextMenu.querySelectorAll(
+      ".message-context-menu-item",
+    ) as NodeListOf<HTMLElement>;
+
+    // Whole-message actions are shown only when no range selection exists.
+    menuItems.forEach((item: HTMLElement) => {
+      const action = item.dataset.action;
+      if (action === "copy-selection") {
+        item.style.display = hasSelectionInTarget ? "" : "none";
+      } else {
+        item.style.display = hasSelectionInTarget ? "none" : "";
+      }
+    });
+
+    let hasVisibleItems = false;
+    for (const item of menuItems) {
+      if (item.style.display !== "none") {
+        hasVisibleItems = true;
+        break;
+      }
+    }
+    if (!hasVisibleItems) {
+      this._hideMessageContextMenu();
+      return;
+    }
+
+    this.messageContextMenu.style.left = `${x}px`;
+    this.messageContextMenu.style.top = `${y}px`;
+    this.messageContextMenu.style.display = "block";
+  }
+
+  private _hideMessageContextMenu(): void {
+    this.messageContextMenu.style.display = "none";
+    this.contextMenuTargetMessage = null;
+  }
+
+  private _hasTextSelectionInTargetMessage(): boolean {
+    if (!this.contextMenuTargetMessage) return false;
+    const selection = this.doc.defaultView?.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+      return false;
+    }
+
+    const selectedText = selection.toString().trim();
+    if (!selectedText) return false;
+
+    const range = selection.getRangeAt(0);
+    const elementNodeType = this.doc.defaultView?.Node?.ELEMENT_NODE ?? 1;
+    const commonAncestor =
+      range.commonAncestorContainer.nodeType === elementNodeType
+        ? (range.commonAncestorContainer as Element)
+        : range.commonAncestorContainer.parentElement;
+    if (!commonAncestor) return false;
+
+    return this.contextMenuTargetMessage.contains(commonAncestor);
+  }
+
+  private async _copySelectedTextInTargetMessage(): Promise<void> {
+    if (!this._hasTextSelectionInTargetMessage()) return;
+    const selection = this.doc.defaultView?.getSelection();
+    const text = selection?.toString() || "";
+    if (!text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_e) {
+      const temp = this.doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "textarea",
+      ) as HTMLTextAreaElement;
+      temp.value = text;
+      this.body.appendChild(temp);
+      temp.select();
+      this.doc.execCommand("copy");
+      temp.remove();
+    }
+  }
+
+  private async _copyContextMenuTargetMessage(
+    format: "plain" | "markdown",
+  ): Promise<void> {
+    if (!this.contextMenuTargetMessage) return;
+    const plainText = (() => {
+      // Exclude generated metadata from whole-message copy output.
+      const clone = this.contextMenuTargetMessage!.cloneNode(
+        true,
+      ) as HTMLElement;
+      clone.querySelectorAll(".message-details").forEach((element: Element) => {
+        element.remove();
+      });
+      return clone.textContent || "";
+    })();
+    const markdownText =
+      this.contextMenuTargetMessage.dataset.rawText || plainText;
+    const text = format === "plain" ? plainText : markdownText;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_e) {
+      // Fallback for environments where Clipboard API is unavailable.
+      const temp = this.doc.createElementNS(
+        "http://www.w3.org/1999/xhtml",
+        "textarea",
+      ) as HTMLTextAreaElement;
+      temp.value = text;
+      this.body.appendChild(temp);
+      temp.select();
+      this.doc.execCommand("copy");
+      temp.remove();
+    }
+  }
+
+  /**
+   * Attaches mouse event listeners to citation containers within a message element
+   * to display a custom popup with the original raw text.
+   */
+  private _attachCitationPopupListeners(messageElement: HTMLElement): void {
+    if (messageElement.dataset.citationPopupAttached === "true") {
+      return;
+    }
+    messageElement.dataset.citationPopupAttached = "true";
+    const citationContainers = messageElement.querySelectorAll(
+      ".citation-container",
+    );
+    citationContainers.forEach((container: Element) => {
+      container.addEventListener("mouseenter", (event: MouseEvent) => {
+        const originalQuote = (container as HTMLElement).dataset.originalQuote;
+        if (originalQuote) {
+          this.citationPopup.textContent = originalQuote;
+          this.citationPopup.style.left = `${event.clientX + 10}px`; // カーソルから少しずらす
+          this.citationPopup.style.top = `${event.clientY + 10}px`;
+          this.citationPopup.style.display = "block";
+        }
+      });
+
+      container.addEventListener("mouseleave", () => {
+        this.citationPopup.style.display = "none";
+      });
+
+      // マウスが動いてもポップアップ位置を追従させる
+      container.addEventListener("mousemove", (event: MouseEvent) => {
+        if (this.citationPopup.style.display === "block") {
+          this.citationPopup.style.left = `${event.clientX + 10}px`;
+          this.citationPopup.style.top = `${event.clientY + 10}px`;
+        }
+      });
+    });
+  }
+}

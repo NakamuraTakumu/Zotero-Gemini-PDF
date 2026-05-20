@@ -1,29 +1,34 @@
 // gemini-pdf/src/modules/reader/pdfSyncManager.ts
 
 import {
-  PREF_API_KEY,
   PARENT_ITEM_FILE_METADATA_FILENAME_PREFIX,
   PARENT_ITEM_FILE_METADATA_TITLE_PREFIX,
 } from "../../utils/constants";
-import { getPref } from "../../utils/prefs";
-import { uploadFile, getFileMetadata } from "../geminiApi";
+import { getSelectedProvider } from "../llm/provider";
+import { getPdfUploadAdapter } from "../llm/pdfUploadAdapters";
 import { UIManager } from "./ui";
 import {
   ParentItemFileMetadata,
   ParentItemFileMetadataFile,
+  ProviderId,
 } from "../../types/chat";
 
 /**
- * Manages the synchronization of PDF files with the Gemini File API,
+ * Manages the synchronization of PDF files with the selected provider's file API,
  * including the persistence of synchronization metadata.
  */
 export class PdfFileSyncManager {
+  private static inFlightSyncs = new Map<
+    string,
+    Promise<ParentItemFileMetadata>
+  >();
   private parentItemFileMetadata: ParentItemFileMetadata | null = null;
+  private provider: ProviderId | null = null;
 
   constructor() {}
 
   /**
-   * Ensures that the PDF attachments for the current item are synchronized with the Gemini File API.
+   * Ensures that the PDF attachments for the current item are synchronized with the selected provider's file API.
    * This method shows UI feedback during the process and returns the latest metadata.
    * @param parentItem The Zotero parent item.
    * @param uiManager The UI manager to display messages.
@@ -38,19 +43,24 @@ export class PdfFileSyncManager {
       return null;
     }
 
-    const apiKey = getPref(PREF_API_KEY);
-    if (!apiKey) {
-      const errorMessage = "Gemini API key is not set.";
-      Zotero.logError(new Error(errorMessage));
-      uiManager.addBotMessage(errorMessage, "error-message");
-      return null;
-    }
-
     try {
-      this.parentItemFileMetadata = await this._synchronizePdfAttachments(
-        parentItem,
-        uiManager,
-      );
+      this.provider = getSelectedProvider();
+      const syncKey = `${parentItem.key}:${this.provider}`;
+      let syncPromise = PdfFileSyncManager.inFlightSyncs.get(syncKey);
+      if (!syncPromise) {
+        syncPromise = this._synchronizePdfAttachments(
+          parentItem,
+          uiManager,
+          this.provider,
+        ).finally(() => {
+          PdfFileSyncManager.inFlightSyncs.delete(syncKey);
+        });
+        PdfFileSyncManager.inFlightSyncs.set(syncKey, syncPromise);
+      } else {
+        Zotero.debug(`[Gemini PDF] Reusing in-flight PDF sync for ${syncKey}.`);
+      }
+
+      this.parentItemFileMetadata = await syncPromise;
       return this.parentItemFileMetadata;
     } catch (e: any) {
       const errorMessage = e.message || String(e);
@@ -64,21 +74,24 @@ export class PdfFileSyncManager {
   }
 
   /**
-   * Synchronizes PDF attachments of a Zotero item with the Gemini File API.
+   * Synchronizes PDF attachments of a Zotero item with the selected provider's file API.
    * It checks for existing files, uploads new or expired ones, and maintains a
    * metadata record of the uploaded files.
    */
   private async _synchronizePdfAttachments(
     parentItem: Zotero.Item,
     ui: UIManager,
+    provider: ProviderId,
   ): Promise<ParentItemFileMetadata> {
     Zotero.debug("Starting PDF context synchronization...");
     const statusMessageDiv = ui.addBotMessage(
-      "Syncing PDFs...",
+      `Syncing PDFs for ${provider}...`,
       "sync-message",
     );
+    const adapter = getPdfUploadAdapter(provider);
 
     const metadata = await this._loadParentItemFileMetadata(parentItem);
+    let updated = false;
 
     const childAttachmentIds = parentItem.getAttachments(false);
     const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
@@ -89,99 +102,114 @@ export class PdfFileSyncManager {
         att.attachmentPath,
     );
 
-    let updated = false;
-
     const syncPromises = pdfAttachments.map(async (pdf) => {
       const pdfKey = pdf.key;
       const fileInfo = metadata.files.find(
         (f) => f.zoteroAttachmentKey === pdfKey,
       );
+      const pdfPath = await pdf.getFilePathAsync();
+      const pdfTitle = (pdf.getField("title") as string) || "attachment.pdf";
+      const lastModified = (await pdf.attachmentModificationTime) || undefined;
+
+      if (!pdfPath) {
+        Zotero.logError(
+          new Error(`Could not get file path for PDF: ${pdfTitle}`),
+        );
+        return;
+      }
+
+      let targetFileInfo = fileInfo;
+      if (!targetFileInfo) {
+        targetFileInfo = {
+          zoteroAttachmentKey: pdfKey,
+          fileName: pdfTitle,
+          lastModified,
+          uploads: [],
+        };
+        metadata.files.push(targetFileInfo);
+        updated = true;
+      } else {
+        targetFileInfo.fileName = targetFileInfo.fileName || pdfTitle;
+        targetFileInfo.lastModified = lastModified;
+        targetFileInfo.uploads = Array.isArray(targetFileInfo.uploads)
+          ? targetFileInfo.uploads
+          : [];
+      }
 
       let needsUpload = false;
-      if (fileInfo) {
+      const uploadInfo = targetFileInfo.uploads.find(
+        (upload) => upload.provider === provider,
+      );
+      if (uploadInfo) {
         Zotero.debug(
-          `Checking status of existing file: ${fileInfo.fileName} (${fileInfo.geminiFileUri})`,
+          `Checking ${provider} upload for PDF: ${targetFileInfo.fileName}`,
         );
-        const geminiFileName = fileInfo.geminiFileUri.split("/").pop();
-        if (!geminiFileName) {
-          Zotero.logError(
-            new Error(
-              `Could not extract Gemini file name from URI: ${fileInfo.geminiFileUri}`,
-            ),
+        const isAvailable = await adapter.isUploadAvailable(uploadInfo);
+        if (!isAvailable) {
+          Zotero.debug(
+            `${provider} upload for ${targetFileInfo.fileName} is expired or missing. Re-uploading.`,
           );
           needsUpload = true;
         } else {
-          const fileApiMetadata = await getFileMetadata(
-            `files/${geminiFileName}`,
+          Zotero.debug(
+            `${provider} upload for ${targetFileInfo.fileName} is still valid.`,
           );
-          if (!fileApiMetadata) {
-            Zotero.debug(
-              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is expired or missing. Re-uploading.`,
-            );
-            needsUpload = true;
-          } else {
-            Zotero.debug(
-              `File ${fileInfo.fileName} (${fileInfo.geminiFileUri}) is still valid.`,
-            );
-          }
         }
       } else {
         Zotero.debug(
-          `No existing file record for PDF: ${pdf.getField("title")}. Uploading.`,
+          `No ${provider} upload record for PDF: ${pdfTitle}. Uploading.`,
         );
         needsUpload = true;
       }
 
       if (needsUpload) {
-        const pdfPath = pdf.getFilePath();
-        const pdfTitle = pdf.getField("title") as string;
-        if (!pdfPath) {
-          Zotero.logError(
-            new Error(`Could not get file path for PDF: ${pdfTitle}`),
-          );
-          return;
-        }
         try {
-          ui.updateBotMessage(statusMessageDiv, `Uploading ${pdfTitle}...`);
-          const uploadResult = await uploadFile(pdfPath, pdfTitle);
-
-          if (uploadResult && uploadResult.uri) {
-            updated = true;
-
-            const newFileInfo: ParentItemFileMetadataFile = {
-              zoteroAttachmentKey: pdfKey,
-              geminiFileUri: uploadResult.uri,
-              fileName: pdfTitle,
-              lastUploadTimestamp: new Date().toISOString(),
-            };
-
-            metadata.files = metadata.files.filter(
-              (f) => f.zoteroAttachmentKey !== pdfKey,
-            );
-            metadata.files.push(newFileInfo);
-            Zotero.debug(
-              `Successfully uploaded and recorded file: ${pdfTitle}`,
-            );
-          } else {
-            throw new Error("Upload result is invalid or missing URI.");
-          }
+          Zotero.log(
+            `[Gemini PDF] Uploading PDF to ${provider}: ${pdfTitle} (${pdfPath})`,
+          );
+          ui.updateBotMessage(
+            statusMessageDiv,
+            `Uploading ${pdfTitle} to ${provider}...`,
+          );
+          const uploadResult = await adapter.uploadPdf(pdfPath, pdfTitle);
+          targetFileInfo.uploads = targetFileInfo.uploads.filter(
+            (upload) => upload.provider !== provider,
+          );
+          targetFileInfo.uploads.push(uploadResult);
+          updated = true;
+          Zotero.log(
+            `Successfully uploaded and recorded ${provider} file: ${pdfTitle}`,
+          );
         } catch (uploadError: any) {
+          const uploadErrorMessage = uploadError.message || String(uploadError);
+          Zotero.log(
+            `[Gemini PDF] Failed to upload PDF to ${provider}: ${pdfTitle}: ${uploadErrorMessage}`,
+          );
           Zotero.logError(
             new Error(
-              `Failed to upload ${pdfTitle}: ${
-                uploadError.message || String(uploadError)
-              }`,
+              `Failed to upload ${pdfTitle} to ${provider}: ${uploadErrorMessage}`,
             ),
           );
-          ui.updateBotMessage(statusMessageDiv, `Error uploading ${pdfTitle}.`);
+          ui.updateBotMessage(
+            statusMessageDiv,
+            `Error uploading ${pdfTitle} to ${provider}: ${uploadErrorMessage}`,
+          );
+          throw uploadError;
         }
       }
     });
 
-    await Promise.all(syncPromises);
+    const syncResults = await Promise.allSettled(syncPromises);
+    const firstSyncError = syncResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
 
     if (updated) {
       await this._saveParentItemFileMetadata(parentItem, metadata);
+    }
+
+    if (firstSyncError) {
+      throw firstSyncError.reason;
     }
 
     ui.updateBotMessage(statusMessageDiv, "PDF sync complete.");
@@ -216,7 +244,9 @@ export class PdfFileSyncManager {
         const content = await Zotero.File.getContentsAsync(metadataFilePath);
         if (typeof content === "string" && content.trim() !== "") {
           try {
-            return JSON.parse(content) as ParentItemFileMetadata;
+            return this._normalizeMetadata(
+              JSON.parse(content) as ParentItemFileMetadata,
+            );
           } catch (e: any) {
             Zotero.logError(
               new Error(
@@ -233,6 +263,20 @@ export class PdfFileSyncManager {
     return {
       zoteroParentItemKey: parentItem.key,
       files: [],
+    };
+  }
+
+  private _normalizeMetadata(
+    metadata: ParentItemFileMetadata,
+  ): ParentItemFileMetadata {
+    return {
+      zoteroParentItemKey: metadata.zoteroParentItemKey,
+      files: (metadata.files || []).map((file) => ({
+        zoteroAttachmentKey: file.zoteroAttachmentKey,
+        fileName: file.fileName,
+        lastModified: file.lastModified,
+        uploads: Array.isArray(file.uploads) ? file.uploads : [],
+      })),
     };
   }
 
@@ -264,7 +308,10 @@ export class PdfFileSyncManager {
             e.message || String(e)
           }`,
         );
+        throw e;
       }
+    } else {
+      throw new Error("Could not get file path for ParentItemFileMetadata.");
     }
   }
 

@@ -3,9 +3,7 @@ import { registerPrefsScripts } from "./modules/preferenceScript"; // Import the
 import { initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
 import { buildReaderPopup } from "./modules/readerPopup";
-
-
-
+import { migrateProviderPrefs } from "./utils/prefMigration";
 
 async function onStartup() {
   await Promise.all([
@@ -20,6 +18,7 @@ async function onStartup() {
   };
 
   initLocale();
+  migrateProviderPrefs();
 
   // Register the observer for item changes
   // Zotero.Notifier.registerObserver(hooks, ["item"], observerID);

@@ -10,15 +10,24 @@
     <groupbox>
       <label
         ><html:h2 data-l10n-id="gemini-pdf-settings-title"
-          >Gemini API Settings</html:h2
+          >LLM API Settings</html:h2
         ></label
       >
       <hbox align="center">
-        <label
-          control="__addonRef__-gemini-api-key"
-          data-l10n-id="gemini-pdf-api-key-label"
-          >API Key:</label
+        <label control="__addonRef__-llm-provider">Provider:</label>
+        <menulist
+          id="__addonRef__-llm-provider"
+          preference="__prefsPrefix__.llmProvider"
         >
+          <menupopup>
+            <menuitem label="Gemini" value="gemini" />
+            <menuitem label="OpenAI" value="openai" />
+            <menuitem label="Anthropic" value="anthropic" />
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-gemini-api-key">Gemini API Key:</label>
         <html:input
           type="text"
           id="__addonRef__-gemini-api-key"
@@ -27,13 +36,33 @@
         />
       </hbox>
       <hbox align="center">
+        <label control="__addonRef__-openai-api-key">OpenAI API Key:</label>
+        <html:input
+          type="text"
+          id="__addonRef__-openai-api-key"
+          preference="__prefsPrefix__.openaiApiKey"
+          flex="1"
+        />
+      </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-anthropic-api-key"
+          >Anthropic API Key:</label
+        >
+        <html:input
+          type="text"
+          id="__addonRef__-anthropic-api-key"
+          preference="__prefsPrefix__.anthropicApiKey"
+          flex="1"
+        />
+      </hbox>
+      <hbox align="center">
         <label
-          control="__addonRef__-gemini-system-prompt"
+          control="__addonRef__-llm-system-prompt"
           data-l10n-id="gemini-pdf-system-prompt-label"
           >System Prompt:</label
         >
         <html:textarea
-          id="__addonRef__-gemini-system-prompt"
+          id="__addonRef__-llm-system-prompt"
           preference="__prefsPrefix__.geminiSystemPrompt"
           flex="1"
           rows="5"
@@ -53,11 +82,7 @@
         />
       </hbox>
       <hbox align="center">
-        <label
-          control="__addonRef__-gemini-model-list"
-          data-l10n-id="gemini-pdf-model-list-label"
-          >Available Models (comma-separated):</label
-        >
+        <label control="__addonRef__-gemini-model-list">Gemini Models:</label>
         <html:textarea
           id="__addonRef__-gemini-model-list"
           preference="__prefsPrefix__.geminiModelList"
@@ -65,7 +90,38 @@
           rows="2"
         />
       </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-openai-model-list">OpenAI Models:</label>
+        <html:textarea
+          id="__addonRef__-openai-model-list"
+          preference="__prefsPrefix__.openaiModelList"
+          flex="1"
+          rows="2"
+        />
+      </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-anthropic-model-list"
+          >Anthropic Models:</label
+        >
+        <html:textarea
+          id="__addonRef__-anthropic-model-list"
+          preference="__prefsPrefix__.anthropicModelList"
+          flex="1"
+          rows="2"
+        />
+      </hbox>
       <separator class="hr" />
+      <hbox align="center">
+        <label control="__addonRef__-title-generation-provider"
+          >Title Generation Provider:</label
+        >
+        <html:input
+          type="text"
+          id="__addonRef__-title-generation-provider"
+          preference="__prefsPrefix__.titleGenerationProvider"
+          flex="1"
+        />
+      </hbox>
       <hbox align="center">
         <label
           control="__addonRef__-title-generation-model"

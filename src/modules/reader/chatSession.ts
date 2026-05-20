@@ -1,35 +1,34 @@
 import {
   ChatSessionHistory,
   ChatMessage,
+  LlmCitation,
+  LlmDiagnostics,
   ParentItemFileMetadata,
+  ProviderId,
 } from "../../types/chat";
 import { getPref } from "../../utils/prefs";
-import {
-  PREF_SELECTED_MODEL,
-  PREF_USE_GOOGLE_SEARCH,
-  PREF_INCLUDE_THOUGHTS,
-  PREF_CONTEXT_WINDOW_SIZE,
-  PREF_TITLE_GENERATION_MODEL,
-  PREF_TITLE_GENERATION_PROMPT,
-  GEMINI_CHAT_TITLE_PREFIX,
-  GEMINI_CHAT_FILENAME_PREFIX,
-} from "../../utils/constants";
-import { Content, Part } from "@google/genai";
-import { sendMessageToGemini, uploadFile, getFileMetadata } from "../geminiApi";
+import { PREF_CONTEXT_WINDOW_SIZE } from "../../utils/constants";
+import { sendMessageToLlm } from "../llm/chat";
+import { getSelectedProvider } from "../llm/provider";
 import { v4 as uuidv4 } from "uuid";
 import { getString } from "../../utils/locale";
 import GlobalChatManager from "../globalChatManager"; // Add this import
+import { ChatSessionRepository } from "./chatSessionRepository";
+import { TitleGenerationService } from "./titleGenerationService";
 
 /**
  * Represents a single chat session, encapsulating its history and operations.
  * This class manages the lifecycle of a conversation, including sending messages,
- * generating titles, and interacting with the underlying Gemini API and persistence layers.
+ * generating titles, and interacting with the underlying LLM and persistence layers.
  */
 export class ChatSession {
   private _history: ChatSessionHistory;
   private _parentItem: Zotero.Item;
   private _attachment!: Zotero.Item; // Initialized in init()
   private globalChatManager: GlobalChatManager; // Add this line
+  private repository: ChatSessionRepository;
+  private titleGenerationService = new TitleGenerationService();
+  private titleGenerationPromise: Promise<boolean> | null = null;
 
   /**
    * Creates a new ChatSession instance for a new chat.
@@ -40,6 +39,7 @@ export class ChatSession {
   public static createNew(
     parentItem: Zotero.Item,
     globalChatManager: GlobalChatManager, // Add this param
+    repository: ChatSessionRepository,
   ): ChatSession {
     const newHistory: ChatSessionHistory = {
       metadata: {
@@ -51,17 +51,28 @@ export class ChatSession {
       },
       history: [],
     };
-    return new ChatSession(newHistory, parentItem, globalChatManager); // Add globalChatManager
+    return new ChatSession(
+      newHistory,
+      parentItem,
+      globalChatManager,
+      repository,
+    );
   }
 
   constructor(
     history: ChatSessionHistory,
     parentItem: Zotero.Item,
     globalChatManager: GlobalChatManager, // Add this param
+    repository: ChatSessionRepository,
+    attachment?: Zotero.Item,
   ) {
     this._history = history;
     this._parentItem = parentItem;
     this.globalChatManager = globalChatManager; // Add this line
+    this.repository = repository;
+    if (attachment) {
+      this._attachment = attachment;
+    }
   }
 
   /**
@@ -69,7 +80,10 @@ export class ChatSession {
    * This should be called immediately after construction.
    */
   public async init(): Promise<void> {
-    this._attachment = await this._getOrCreateConversationAttachment();
+    this._attachment = await this.repository.getOrCreateAttachment(
+      this._parentItem,
+      this._history,
+    );
   }
 
   public get history(): Readonly<ChatSessionHistory> {
@@ -96,115 +110,14 @@ export class ChatSession {
    */
   private async _updateAttachmentTitle(): Promise<void> {
     if (!this._attachment) {
-      Zotero.logError(new Error("ChatSession attachment not initialized. Cannot update attachment title."));
-      return;
-    }
-    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${this.title}`;
-    if (this._attachment.getField('title') !== newAttachmentTitle) {
-      this._attachment.setField('title', newAttachmentTitle);
-      await this._attachment.saveTx();
-      Zotero.debug(`[ChatSession] Attachment title updated to "${newAttachmentTitle}"`);
-    }
-  }
-  /**
-   * Finds an existing Gemini Conversation attachment or creates a new one if it doesn't exist.
-   */
-  private async _getOrCreateConversationAttachment(): Promise<Zotero.Item> {
-    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Called for chatId: ${this.id}, parentItemKey: ${this._parentItem.key}`);
-    const expectedChatId = this._history.metadata.chatId;
-
-    const childAttachments = await Zotero.Items.get(
-      this._parentItem.getAttachments(),
-    );
-    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Found ${childAttachments.length} child attachments for parent item: ${this._parentItem.key}`);
-
-    for (const attachment of childAttachments) {
-      const attachmentTitle = attachment.getField("title");
-      Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Checking existing attachment: key=${attachment.key}, title="${attachmentTitle}", itemType=${attachment.itemType}, linkMode=${attachment.attachmentLinkMode}`);
-
-      // Filter for attachments that are likely Gemini Chat files
-      if (
-        (attachment.itemType as string) === "attachment" &&
-        attachmentTitle?.startsWith(GEMINI_CHAT_TITLE_PREFIX) &&
-        attachment.attachmentLinkMode ===
-          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      ) {
-        const conversationFilePath = attachment.getFilePath();
-        if (conversationFilePath) {
-          try {
-            const content = await Zotero.File.getContentsAsync(conversationFilePath);
-            if (typeof content === "string" && content.trim() !== "") {
-              const parsedHistory = JSON.parse(content) as ChatSessionHistory;
-              // Check if the chatId from the parsed content matches the expected chatId
-              if (parsedHistory.metadata.chatId === expectedChatId) {
-                Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Found matching existing Gemini Chat attachment by chatId: ${attachment.key}`);
-                return attachment;
-              } else {
-                Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Attachment title starts with prefix, but chatId mismatch. Attachment chatId: ${parsedHistory.metadata.chatId}, Expected chatId: ${expectedChatId}`);
-              }
-            } else {
-              Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: Content of attachment ${attachment.key} was empty or not a string.`);
-            }
-          } catch (e: any) {
-            Zotero.logError(new Error(`[ChatSession] _getOrCreateConversationAttachment: Error parsing attachment ${attachment.key} content: ${e.message || String(e)}`));
-          }
-        }
-      }
-    }
-
-    Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: No existing Gemini Chat attachment found matching chatId: ${this.id}. Creating new one.`);
-    // If no existing attachment is found, create a new one
-    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${expectedChatId}`; // Use chatId for initial title to ensure uniqueness in file system
-    const filename = `${GEMINI_CHAT_FILENAME_PREFIX}${expectedChatId}.json`;
-
-    const tempDir = Zotero.getTempDirectory();
-    const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
-    tempDir.append(tempFileName);
-    const tempFilePath = tempDir.path;
-
-    try {
-      const conversationJsonString = JSON.stringify(this._history, null, 2);
-      await Zotero.File.putContentsAsync(tempFilePath, conversationJsonString);
-      const tempFile = Zotero.File.pathToFile(tempFilePath);
-
-      const newAttachment = await Zotero.Attachments.importFromFile({
-        file: tempFile,
-        parentItemID: this._parentItem.id,
-        contentType: "application/json",
-        title: newAttachmentTitle, // Use the chatId-based title here
-        saveOptions: {
-          // Prevent selection change that can disrupt the active PDF reader tab.
-          skipSelect: true,
-        },
-      });
-
-      Zotero.debug(
-        `Successfully created new conversation attachment with key ${newAttachment.key}`,
-      );
-      Zotero.log(`[ChatSession] _getOrCreateConversationAttachment: New attachment created successfully: ${newAttachment.key}`);
-      return newAttachment;
-    } catch (e: any) {
       Zotero.logError(
         new Error(
-          `Error creating attachment from temp file: ${e.message || String(e)}`,
+          "ChatSession attachment not initialized. Cannot update attachment title.",
         ),
       );
-      throw e;
-    } finally {
-      try {
-        const tempFile = Zotero.File.pathToFile(tempFilePath);
-        if (tempFile.exists()) {
-          tempFile.remove(false);
-          Zotero.debug(`Temporary file removed: ${tempFilePath}`);
-        }
-      } catch (cleanupError: any) {
-        Zotero.logError(
-          new Error(
-            `Failed to clean up temporary file ${tempFilePath}: ${cleanupError.message || String(cleanupError)}`,
-          ),
-        );
-      }
+      return;
     }
+    await this.repository.updateAttachmentTitle(this._attachment, this.title);
   }
 
   /**
@@ -217,23 +130,7 @@ export class ChatSession {
       );
       return;
     }
-    const conversationFilePath = this._attachment.getFilePath();
-    if (conversationFilePath) {
-      const newContent = JSON.stringify(this._history, null, 2);
-      try {
-        await Zotero.File.putContentsAsync(conversationFilePath, newContent);
-      } catch (e: any) {
-        Zotero.log(
-          `Error writing to conversation file: ${e.message || String(e)}`,
-        );
-      }
-    } else {
-      Zotero.logError(
-        new Error(
-          `[ChatSession] Could not get file path for conversation attachment ${this._attachment.key}.`,
-        ),
-      );
-    }
+    await this.repository.saveSession(this._attachment, this._history);
   }
 
   /**
@@ -247,20 +144,7 @@ export class ChatSession {
       return;
     }
 
-    try {
-      this._attachment.deleted = true;
-      await this._attachment.saveTx();
-      Zotero.debug(
-        `Successfully deleted conversation attachment for chatId: ${this.id}`,
-      );
-    } catch (e: any) {
-      Zotero.logError(
-        new Error(
-          `Error deleting conversation attachment ${this._attachment.key}: ${e.message || String(e)}`,
-        ),
-      );
-      throw e;
-    }
+    await this.repository.deleteSession(this._attachment, this.id);
   }
 
   /**
@@ -285,16 +169,22 @@ export class ChatSession {
   public addBotMessage(
     text: string,
     model: string,
+    provider: ProviderId,
     thoughts?: string[],
     groundingMetadata?: any,
+    citations?: LlmCitation[],
+    diagnostics?: LlmDiagnostics,
   ): void {
     const botMessage: ChatMessage = {
       timestamp: new Date().toISOString(),
       role: "model",
       model: model,
+      provider,
       parts: [{ text: text || "" }],
       thoughts: thoughts,
+      citations,
       groundingMetadata: groundingMetadata,
+      llmDiagnostics: diagnostics,
     };
     this._history.history.push(botMessage);
   }
@@ -311,29 +201,26 @@ export class ChatSession {
       return false;
     }
 
-    const userPrompt = this._history.history[0].parts[0].text;
-    const modelResponse = this._history.history[1].parts[0].text;
+    if (this.titleGenerationPromise) {
+      return this.titleGenerationPromise;
+    }
 
-    const promptTemplate = getPref(PREF_TITLE_GENERATION_PROMPT) as string;
-    const titlePrompt = promptTemplate
-      .replace("{userPrompt}", userPrompt)
-      .replace("{modelResponse}", modelResponse);
-
-    const modelForTitle = getPref(PREF_TITLE_GENERATION_MODEL) as string;
-
+    this.titleGenerationPromise = this._generateTitle();
     try {
-      const { responseText } = await sendMessageToGemini(
-        [],
-        [{ text: titlePrompt }],
-        false,
-        undefined,
-        modelForTitle,
-      );
-      if (responseText) {
-        this.title = responseText
-          .trim()
-          .replace(/^「|」$/g, "")
-          .replace(/\.$/, "");
+      return await this.titleGenerationPromise;
+    } finally {
+      this.titleGenerationPromise = null;
+    }
+  }
+
+  private async _generateTitle(): Promise<boolean> {
+    try {
+      const generatedTitle =
+        await this.titleGenerationService.generateInitialTitle(
+          this._history.history,
+        );
+      if (generatedTitle) {
+        this.title = generatedTitle;
         await this._updateAttachmentTitle();
         await this.globalChatManager.saveSession(this);
         return true;
@@ -360,50 +247,13 @@ export class ChatSession {
       return false;
     }
 
-    const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
-    const historyForTitle =
-      historyLimit > 0
-        ? this._history.history.slice(0, historyLimit)
-        : [...this._history.history];
-
-    const firstUserMessage = historyForTitle.find((m) => m.role === "user");
-    const firstModelMessage = historyForTitle.find((m) => m.role === "model");
-    const userPrompt = firstUserMessage?.parts?.[0]?.text || "";
-    const modelResponse = firstModelMessage?.parts?.[0]?.text || "";
-
-    const promptTemplate = getPref(PREF_TITLE_GENERATION_PROMPT) as string;
-    const basePrompt = promptTemplate
-      .replace("{userPrompt}", userPrompt)
-      .replace("{modelResponse}", modelResponse);
-
-    const historyTranscript = historyForTitle
-      .map((message, index) => {
-        const roleLabel = message.role === "user" ? "User" : "Assistant";
-        const text = message.parts?.[0]?.text || "";
-        return `${index + 1}. ${roleLabel}: ${text}`;
-      })
-      .join("\n");
-
-    const titlePrompt =
-      `${basePrompt}\n\n` +
-      `Use the following chat history (oldest first, first ${historyForTitle.length} messages) as primary context for title regeneration:\n` +
-      `${historyTranscript}`;
-
-    const modelForTitle = getPref(PREF_TITLE_GENERATION_MODEL) as string;
-
     try {
-      const { responseText } = await sendMessageToGemini(
-        [],
-        [{ text: titlePrompt }],
-        false,
-        undefined,
-        modelForTitle,
-      );
-      if (responseText) {
-        this.title = responseText
-          .trim()
-          .replace(/^「|」$/g, "")
-          .replace(/\.$/, "");
+      const generatedTitle =
+        await this.titleGenerationService.regenerateTitleFromTopHistory(
+          this._history.history,
+        );
+      if (generatedTitle) {
+        this.title = generatedTitle;
         await this._updateAttachmentTitle();
         await this.globalChatManager.saveSession(this);
         return true;
@@ -422,7 +272,7 @@ export class ChatSession {
   }
 
   /**
-   * Processes a user's message, sends it to the Gemini API, and updates the history.
+   * Processes a user's message, sends it to the LLM, and updates the history.
    * @param textForApi The text to be sent to the API.
    * @param parentItemFileMetadata The metadata of synced PDF files.
    * @returns The model's response text.
@@ -432,78 +282,72 @@ export class ChatSession {
     parentItemFileMetadata: ParentItemFileMetadata,
   ): Promise<{
     responseText: string;
+    provider: ProviderId;
+    model: string;
     thoughts?: string[];
     groundingMetadata?: any;
+    citations?: LlmCitation[];
+    diagnostics?: LlmDiagnostics;
   }> {
-
     const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
 
-    const fullHistory: Content[] = this._history.history.map((msg) => ({
-      role: msg.role,
-      parts: msg.parts,
-    }));
-
     const historyForApi =
-      fullHistory.length > 1 ? fullHistory.slice(0, -1) : [];
+      this._history.history.length > 1
+        ? this._history.history.slice(0, -1)
+        : [];
     const truncatedHistory =
       historyLimit > 0 ? historyForApi.slice(-historyLimit) : historyForApi;
-
-    const userParts: Part[] = [{ text: textForApi }];
-    for (const file of parentItemFileMetadata.files) {
-      userParts.unshift({
-        fileData: {
-          mimeType: "application/pdf",
-          fileUri: file.geminiFileUri,
-        },
-      });
-    }
-
-    const useGoogleSearch = getPref(PREF_USE_GOOGLE_SEARCH) as boolean;
-    let tools: any[] | undefined = undefined;
-    if (useGoogleSearch) {
-      // urlContextも同時に使う
-      tools = [{ urlContext: {} }, { googleSearch: {} }];
-    }
-    const includeThoughts = Boolean(getPref(PREF_INCLUDE_THOUGHTS));
+    const provider = getSelectedProvider();
 
     try {
-  
-      const { thoughts, responseText, groundingMetadata } =
-        await sendMessageToGemini(
-          truncatedHistory,
-          userParts,
-          includeThoughts,
-          tools,
-        );
-  
+      const {
+        thoughts,
+        responseText,
+        groundingMetadata,
+        citations,
+        provider: responseProvider,
+        model,
+        diagnostics,
+      } = await sendMessageToLlm(truncatedHistory, textForApi, {
+        provider,
+        metadata: parentItemFileMetadata,
+      });
+      Zotero.log(
+        `[Gemini PDF] LLM response metadata: provider=${responseProvider}, model=${model}, thoughts=${thoughts.length}, citations=${citations.length}`,
+      );
 
       this.addBotMessage(
         responseText || "",
-        getPref(PREF_SELECTED_MODEL) as string,
+        model,
+        responseProvider,
         thoughts,
         groundingMetadata,
+        citations,
+        diagnostics,
       );
-
 
       // After the first exchange, generate a title for the session
       if (
         this._history.history.length === 2 &&
         !this._history.metadata.isTitleGenerated
       ) {
-
         // Don't wait for this to complete
         this.generateTitle();
       }
 
       return {
         responseText: responseText || "No response.",
+        provider: responseProvider,
+        model,
         thoughts,
         groundingMetadata,
+        citations,
+        diagnostics,
       };
     } catch (e: any) {
       Zotero.logError(
         new Error(
-          `[ChatSession] sendMessage: Error during sendMessageToGemini: ${e.message || String(e)}`,
+          `[ChatSession] sendMessage: Error during sendMessageToLlm: ${e.message || String(e)}`,
         ),
       );
       throw e; // エラーを再スローして_handleSendMessageのcatchブロックで処理されるようにする

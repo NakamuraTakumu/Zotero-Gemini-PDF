@@ -1,3 +1,5 @@
+/* eslint-disable no-unused-vars */
+/* global Zotero, addon, window */
 var MyPluginPreferences = {
   onLoad: function () {
     Zotero.PreferencePages.init();

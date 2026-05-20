@@ -1,11 +1,13 @@
-// gemini-pdf/src/types/chat.d.ts
+export type ProviderId = "gemini" | "openai" | "anthropic";
+export type ReasoningMode = "off" | "low" | "medium" | "high";
 
-// gemini-pdf/src/types/chat.d.ts
-
-import { ChatSessionManager } from "../modules/reader/chatSessionManager"; // ChatSessionManager をインポート
+export type ProviderPdfUploadRef =
+  | { provider: "gemini"; fileUri: string; uploadedAt: string }
+  | { provider: "openai"; fileId: string; uploadedAt: string }
+  | { provider: "anthropic"; fileId: string; uploadedAt: string };
 
 /**
- * Zotero親アイテムに添付されたGemini File API関連のPDF添付ファイルすべての情報を管理するJSONのインターフェース
+ * Zotero親アイテムに添付されたprovider別PDF upload情報を管理するJSONのインターフェース
  */
 export interface ParentItemFileMetadata {
   zoteroParentItemKey: string;
@@ -17,9 +19,9 @@ export interface ParentItemFileMetadata {
  */
 export interface ParentItemFileMetadataFile {
   zoteroAttachmentKey: string;
-  geminiFileUri: string;
   fileName: string;
-  lastUploadTimestamp: string; // ISO 8601 format
+  lastModified?: number;
+  uploads: ProviderPdfUploadRef[];
 }
 
 /**
@@ -48,50 +50,36 @@ export interface ChatMessage {
   timestamp: string; // ISO 8601 format
   role: "user" | "model";
   model?: string; // modelロールの場合のみ
+  provider?: ProviderId; // modelロールの場合のみ
   parts: { text: string }[];
   thoughts?: string[];
+  citations?: LlmCitation[];
   groundingMetadata?: any;
+  llmDiagnostics?: LlmDiagnostics;
 }
 
-// ============================================================================
-// Old Interfaces - Keep temporarily for backward compatibility if needed
-// These will be removed once all code is migrated to new interfaces
-// ============================================================================
-
-/**
- * 現在のコードベースでConversationManagerが利用している会話の型定義
- * 新しいChatSessionHistoryへの移行を考慮し、一時的に残す
- */
-export interface Conversation {
-  metadata: {
-    version: string;
-    zoteroParentItemKey: string;
-    files: ConversationFile[];
-    lastUploadTimestamp: string; // ISO 8601 format
-  };
-  history: ConversationHistoryItem[];
+export interface LlmCitation {
+  title: string;
+  url?: string;
+  quote?: string;
+  provider?: ProviderId;
 }
 
-/**
- * 現在のコードベースでConversationManagerが利用しているConversationFileの型定義
- * 新しいParentItemFileMetadataFileへの移行を考慮し、一時的に残す
- */
-export interface ConversationFile {
-  zoteroAttachmentKey: string;
-  geminiFileUri: string;
-  geminiFileName: string;
-  fileName: string;
-}
-
-/**
- * 現在のコードベースでConversationManagerが利用しているConversationHistoryItemの型定義
- * 新しいChatMessageへの移行を考慮し、一時的に残す
- */
-export interface ConversationHistoryItem {
-  timestamp: string; // ISO 8601 format
-  role: "user" | "model";
-  model?: string; // Only for role: "model"
-  parts: { text: string }[];
-  thoughts?: string[];
-  groundingMetadata?: any;
+export interface LlmDiagnostics {
+  searchRequested: boolean;
+  searchUsed: boolean;
+  thinkingRequested: boolean;
+  thinkingUsed: boolean;
+  thoughtCount: number;
+  groundingChunkCount?: number;
+  webSearchQueryCount?: number;
+  responseOutputTypes?: string[];
+  contentBlockTypes?: string[];
+  webSearchCallCount?: number;
+  reasoningItemCount?: number;
+  reasoningTokenCount?: number;
+  anthropicContentTypes?: string[];
+  anthropicServerToolUseCount?: number;
+  anthropicWebSearchResultCount?: number;
+  anthropicWebSearchRequestCount?: number;
 }

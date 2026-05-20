@@ -1,7 +1,10 @@
-/// <reference path="../globalChatManager.ts" />
 import GlobalChatManager from "../globalChatManager";
 import { ChatSession } from "./chatSession";
-import { ParentItemFileMetadata } from "../../types/chat";
+import {
+  LlmCitation,
+  ParentItemFileMetadata,
+  ProviderId,
+} from "../../types/chat";
 
 /**
  * Manages a collection of ChatSession instances for a Zotero item.
@@ -39,9 +42,7 @@ export class ChatSessionManager {
     try {
       // Load sessions, but don't store locally. They will be fetched from globalChatManager on demand.
       // This call ensures the globalChatManager has the sessions loaded for this item.
-      await this.globalChatManager.loadSessionsForItem(
-        this.parentItem,
-      );
+      await this.globalChatManager.loadSessionsForItem(this.parentItem);
       // No need to call _triggerTitleGenerationForAllSessions here directly,
       // as generateTitle will be called by ChatSession after first exchange,
       // and global event handler will update UI.
@@ -58,10 +59,7 @@ export class ChatSessionManager {
     }
 
     // Subscribe to global chat manager events
-    this.globalChatManager.on(
-      "session-added",
-      this._handleGlobalSessionAdded,
-    );
+    this.globalChatManager.on("session-added", this._handleGlobalSessionAdded);
     this.globalChatManager.on(
       "session-deleted",
       this._handleGlobalSessionDeleted,
@@ -80,10 +78,7 @@ export class ChatSessionManager {
    * Unsubscribes from global events. Call this when the pane is destroyed.
    */
   public destroy(): void {
-    this.globalChatManager.off(
-      "session-added",
-      this._handleGlobalSessionAdded,
-    );
+    this.globalChatManager.off("session-added", this._handleGlobalSessionAdded);
     this.globalChatManager.off(
       "session-deleted",
       this._handleGlobalSessionDeleted,
@@ -99,7 +94,9 @@ export class ChatSessionManager {
     session: ChatSession;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(`[ChatSessionManager] _handleGlobalSessionAdded: Session ${event.session.id} ("${event.session.title}") added.`);
+      Zotero.debug(
+        `[ChatSessionManager] _handleGlobalSessionAdded: Session ${event.session.id} ("${event.session.title}") added.`,
+      );
       // If no active session, make the newly added one active
       if (!this._activeSessionId) {
         this.switchSession(event.session.id);
@@ -108,22 +105,26 @@ export class ChatSessionManager {
     }
   };
 
-  private _handleGlobalSessionDeleted = async (event: { // async キーワードを追加
+  private _handleGlobalSessionDeleted = async (event: {
+    // async キーワードを追加
     itemKey: string;
     sessionId: string;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(`[ChatSessionManager] _handleGlobalSessionDeleted: Session ${event.sessionId} deleted.`);
+      Zotero.debug(
+        `[ChatSessionManager] _handleGlobalSessionDeleted: Session ${event.sessionId} deleted.`,
+      );
       this.rerenderSwitcher(); // スイッチャーの再描画
 
       // 削除されたセッションがアクティブだった場合、新しいアクティブセッションを設定
       if (this._activeSessionId === event.sessionId) {
-        const remainingSessions = this.globalChatManager.getAllSessions(this._itemKey);
+        const remainingSessions = this.globalChatManager.getAllSessions(
+          this._itemKey,
+        );
         if (remainingSessions.length > 0) {
           // 残りのセッションに切り替え。switchSession内で rerenderChatMessages が呼ばれる
           this.switchSession(remainingSessions[0].id);
-        }
-        else {
+        } else {
           // 新しいセッションを作成し、完了を待つ
           await this.createSession(); // await を追加
         }
@@ -140,9 +141,13 @@ export class ChatSessionManager {
     session: ChatSession;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(`[ChatSessionManager] _handleGlobalSessionUpdated: Session ${event.session.id} ("${event.session.title}") updated.`);
+      Zotero.debug(
+        `[ChatSessionManager] _handleGlobalSessionUpdated: Session ${event.session.id} ("${event.session.title}") updated.`,
+      );
       const allSessions = this.getAllSessions();
-      Zotero.debug(`[ChatSessionManager] _handleGlobalSessionUpdated: All sessions for item ${this._itemKey}: ${allSessions.map(s => `"${s.title}"`).join(', ')}`);
+      Zotero.debug(
+        `[ChatSessionManager] _handleGlobalSessionUpdated: All sessions for item ${this._itemKey}: ${allSessions.map((s) => `"${s.title}"`).join(", ")}`,
+      );
 
       // If the updated session is the active one, re-render chat messages
       if (this._activeSessionId === event.session.id) {
@@ -154,17 +159,26 @@ export class ChatSessionManager {
 
   private async _initializeActiveSession(): Promise<void> {
     const sessions = this.globalChatManager.getAllSessions(this._itemKey);
-    Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Found ${sessions.length} sessions for item ${this._itemKey}.`);
+    Zotero.debug(
+      `[ChatSessionManager] _initializeActiveSession: Found ${sessions.length} sessions for item ${this._itemKey}.`,
+    );
     if (sessions.length > 0) {
-      sessions.forEach(s => Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Existing session: ID=${s.id}, Title="${s.title}", Created=${s.history.metadata.createdTimestamp}`));
+      sessions.forEach((s) =>
+        Zotero.debug(
+          `[ChatSessionManager] _initializeActiveSession: Existing session: ID=${s.id}, Title="${s.title}", Created=${s.history.metadata.createdTimestamp}`,
+        ),
+      );
     }
 
-
     if (sessions.length === 0) {
-      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: No sessions found, creating a new one.`);
+      Zotero.debug(
+        `[ChatSessionManager] _initializeActiveSession: No sessions found, creating a new one.`,
+      );
       const newSession = await this.createSession();
       this._activeSessionId = newSession.id;
-      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Created new session ID: ${newSession.id}`);
+      Zotero.debug(
+        `[ChatSessionManager] _initializeActiveSession: Created new session ID: ${newSession.id}`,
+      );
     } else {
       // Otherwise, find the most recent session and activate it.
       const latestSession = sessions.sort((a, b) => {
@@ -173,9 +187,13 @@ export class ChatSessionManager {
         return dateB.getTime() - dateA.getTime();
       })[0];
       this._activeSessionId = latestSession.id;
-      Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Activated latest session ID: ${latestSession.id}, Title: "${latestSession.title}"`);
+      Zotero.debug(
+        `[ChatSessionManager] _initializeActiveSession: Activated latest session ID: ${latestSession.id}, Title: "${latestSession.title}"`,
+      );
     }
-    Zotero.debug(`[ChatSessionManager] _initializeActiveSession: Final active session ID set to: ${this._activeSessionId}`);
+    Zotero.debug(
+      `[ChatSessionManager] _initializeActiveSession: Final active session ID set to: ${this._activeSessionId}`,
+    );
   }
 
   /**
@@ -208,8 +226,12 @@ export class ChatSessionManager {
     if (!this._activeSessionId) {
       return null;
     }
-    const activeSession = this.globalChatManager.getAllSessions(this._itemKey).find(s => s.id === this._activeSessionId);
-    Zotero.log(`[Gemini PDF] ChatSessionManager.getActiveSession: Returning session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`);
+    const activeSession = this.globalChatManager
+      .getAllSessions(this._itemKey)
+      .find((s) => s.id === this._activeSessionId);
+    Zotero.log(
+      `[Gemini PDF] ChatSessionManager.getActiveSession: Returning session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`,
+    );
     return activeSession || null;
   }
 
@@ -225,7 +247,9 @@ export class ChatSessionManager {
    * @param chatId The ID of the session to find.
    */
   getSessionById(chatId: string): ChatSession | undefined {
-    return this.globalChatManager.getAllSessions(this._itemKey).find((session) => session.id === chatId);
+    return this.globalChatManager
+      .getAllSessions(this._itemKey)
+      .find((session) => session.id === chatId);
   }
 
   /**
@@ -253,24 +277,25 @@ export class ChatSessionManager {
 
     const chatIdToDelete = activeSession.id;
 
-          try {
-            await this.globalChatManager.deleteSession(activeSession);
-            this._activeSessionId = null; // アクティブセッションIDをリセット
-            // The global event handler _handleGlobalSessionDeleted will update _activeSessionId and rerender.
-            return true;
-          } catch (e: any) {
-            Zotero.logError(
-              new Error(
-                `[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${
-                  e.message || String(e)
-                }`,
-              ),
-            );
-            return false;
-          }  }
+    try {
+      await this.globalChatManager.deleteSession(activeSession);
+      this._activeSessionId = null; // アクティブセッションIDをリセット
+      // The global event handler _handleGlobalSessionDeleted will update _activeSessionId and rerender.
+      return true;
+    } catch (e: any) {
+      Zotero.logError(
+        new Error(
+          `[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${
+            e.message || String(e)
+          }`,
+        ),
+      );
+      return false;
+    }
+  }
 
   /**
-   * Processes a user's message, sends it to the Gemini API, and updates the history.
+   * Processes a user's message, sends it to the LLM, and updates the history.
    * @param textForApi The text to be sent to the API.
    * @param parentItemFileMetadata The metadata of synced PDF files.
    * @returns The model's response text.
@@ -280,7 +305,10 @@ export class ChatSessionManager {
     parentItemFileMetadata: ParentItemFileMetadata,
   ): Promise<{
     responseText: string;
+    provider: ProviderId;
+    model: string;
     thoughts?: string[];
+    citations?: LlmCitation[];
     groundingMetadata?: any;
   }> {
     const activeSession = this.getActiveSession(); // Get active session on demand
@@ -301,4 +329,3 @@ export class ChatSessionManager {
     return result;
   }
 }
-

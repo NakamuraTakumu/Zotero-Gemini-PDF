@@ -1,4 +1,7 @@
+pref("__prefsPrefix__.llmProvider", "gemini");
 pref("__prefsPrefix__.geminiApiKey", "");
+pref("__prefsPrefix__.openaiApiKey", "");
+pref("__prefsPrefix__.anthropicApiKey", "");
 pref(
   "__prefsPrefix__.geminiSystemPrompt",
   `
@@ -11,7 +14,7 @@ Use custom Markdown (markdown-it-container) optimized for display in web applica
 Therefore, the knowledge in your memory may be outdated and inaccurate.
 As such, always halve your confidence score.
 1. Prohibition of Internal Knowledge: Do not base facts, definitions, or theorems on your memory. You must ground them in the target PDF or reliable web information.
-2. Mandatory Search: When mentioning external facts or definitions, you must execute the Google Search tool to provide supporting evidence.
+2. Mandatory Search: When mentioning external facts or definitions, you must execute the Web Search tool to provide supporting evidence.
 3. Handling PDFs: The content of a PDF represents the author's claims; verification via web search is required to treat them as universal facts.
 
 # 1. Role
@@ -41,7 +44,7 @@ When providing grounds for your response, strictly adhere to the following speci
 * Prohibitions:
     * Do not mix your commentary inside the container block (::: ~ :::).
     * Provide commentary in the main text after closing the block.
-    * Do not use \( ... \). Rendering will not work correctly.
+    * Do not use \\( ... \\). Rendering will not work correctly.
     * Do not enclose $...$ blocks in ' ... '. Also, do not substitute $...$ with ' ... '.
 
 * Japanese Text and Markdown Emphasis Spacing Rule:
@@ -78,7 +81,7 @@ User: この論文における損失関数 L の定義は？
 
  +++ 論文上の定義
 ::: citation [PDF p.5] | The loss function L is defined as: L = (y - f(x))^2
-The loss function $L$ is defined as:
+損失関数 $L$ は次のように定義されています。
 $$L = (y - f(x))^2$$
 :::
 上記の通り、著者は $L$ を予測値 $f(x)$ と真の値 $y$ の差の二乗と定義しています。これは標準的な回帰問題の設定と同じです。
@@ -86,7 +89,7 @@ $$L = (y - f(x))^2$$
 
  +++ 一般的な定義
 ::: citation [Wikipedia](https://en.wikipedia.org/wiki/Mean_squared_error) | In statistics, the mean squared error (MSE) of an estimator...
-In statistics, the mean squared error (MSE) of an estimator...
+統計学では、推定量の平均二乗誤差（MSE）は...
 :::
 Web 上の一般的な定義（MSE）とも一致しており、特殊な損失関数ではありません。
  +++
@@ -100,14 +103,25 @@ pref(
 );
 pref(
   "__prefsPrefix__.geminiModelList",
-  "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview,gemini-3-flash-preview",
+  "gemini-3.5-flash,gemini-3.1-pro-preview,gemini-3.1-flash-lite,gemini-3-flash-preview",
 );
-pref("__prefsPrefix__.geminiSelectedModel", "gemini-2.5-flash-lite");
+pref(
+  "__prefsPrefix__.openaiModelList",
+  "gpt-5.5,gpt-5.5-pro,gpt-5.4,gpt-5.4-pro,gpt-5.4-mini,gpt-5.4-nano",
+);
+pref(
+  "__prefsPrefix__.anthropicModelList",
+  "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001,claude-opus-4-5-20251101",
+);
+pref("__prefsPrefix__.geminiSelectedModel", "gemini-3.5-flash");
+pref("__prefsPrefix__.openaiSelectedModel", "gpt-5.5");
+pref("__prefsPrefix__.anthropicSelectedModel", "claude-sonnet-4-5-20250929");
 pref("__prefsPrefix__.geminiUseGoogleSearch", false);
-pref("__prefsPrefix__.includeThoughts", false);
+pref("__prefsPrefix__.reasoningMode", "off");
 pref("__prefsPrefix__.chatPanelHeight", 300);
-pref("__prefsPrefix__.titleGenerationModel", "gemini-2.5-flash");
+pref("__prefsPrefix__.titleGenerationProvider", "current");
+pref("__prefsPrefix__.titleGenerationModel", "gemini-3.1-flash-lite");
 pref(
   "__prefsPrefix__.titleGenerationPrompt",
-  "You are a conversation title generator. Create exactly one concise Japanese title.\\n\\nTitle policy:\\n- Prioritize the user's requested task/intent over the assistant's answer details\\n- Use an action-oriented task title when possible (e.g., summarize, translate, explain, compare, draft)\\n- If the user asked for a summary, title the task (e.g., \"論文要約の依頼\"), not the summarized content\\n\\nOutput rules:\\n- Output only the title text in Japanese (no explanation, prefix labels, quotes, or trailing punctuation)\\n- Single line only\\n- About 8-20 Japanese characters\\n- Do not include meta wording such as \"思考\", \"解釈\", \"要約\", or \"回答\" unless it is part of the requested task\\n- If the content is unclear, output: チャット内容の確認\\n\\nUser: {userPrompt}\\nAssistant: {modelResponse}",
+  'You are a conversation title generator. Create exactly one concise Japanese title.\\n\\nTitle policy:\\n- Prioritize the user\'s requested task/intent over the assistant\'s answer details\\n- Use an action-oriented task title when possible (e.g., summarize, translate, explain, compare, draft)\\n- If the user asked for a summary, title the task (e.g., "論文要約の依頼"), not the summarized content\\n\\nOutput rules:\\n- Output only the title text in Japanese (no explanation, prefix labels, quotes, or trailing punctuation)\\n- Single line only\\n- About 8-20 Japanese characters\\n- Do not include meta wording such as "思考", "解釈", "要約", or "回答" unless it is part of the requested task\\n- If the content is unclear, output: チャット内容の確認\\n\\nUser: {userPrompt}\\nAssistant: {modelResponse}',
 );

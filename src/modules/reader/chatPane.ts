@@ -7,6 +7,7 @@ import { getPref, setPref } from "../../utils/prefs";
 import { PREF_CHAT_PANEL_HEIGHT } from "../../utils/constants";
 import { PdfFileSyncManager } from "./pdfSyncManager";
 import GlobalChatManager from "../globalChatManager"; // Import GlobalChatManager
+import { SendMessageUseCase } from "./sendMessageUseCase";
 
 /**
  * Manages the state and behavior of a single chat pane in the Zotero reader.
@@ -23,9 +24,10 @@ export class ChatPane {
   private parentItemFileMetadata: ParentItemFileMetadata | null;
   public runtimeState: {
     eventHandler: (event: CustomEvent) => void;
-    isGeminiRequestInProgress: boolean;
+    isLlmRequestInProgress: boolean;
   };
   private pdfFileSyncManager: PdfFileSyncManager;
+  private sendMessageUseCase?: SendMessageUseCase;
 
   // Bound event handlers for cleanup
   private _boundHandleLinkClick!: (e: Event) => void;
@@ -54,7 +56,7 @@ export class ChatPane {
       this._handleGeminiAction(event as CustomEvent);
     this.runtimeState = {
       eventHandler: eventHandler as (event: CustomEvent) => void,
-      isGeminiRequestInProgress: false,
+      isLlmRequestInProgress: false,
     };
 
     Zotero.getMainWindow().document.addEventListener(
@@ -77,7 +79,9 @@ export class ChatPane {
     }
 
     if (!this.chatSessionManager) {
-      Zotero.logError(new Error("ChatSessionManager not initialized in chatPane."));
+      Zotero.logError(
+        new Error("ChatSessionManager not initialized in chatPane."),
+      );
       return;
     }
 
@@ -130,14 +134,28 @@ export class ChatPane {
 
     this.managers = { uiManager };
     this.chatSessionManager = chatSessionManager;
+    this.sendMessageUseCase = new SendMessageUseCase({
+      paneId: this.paneId,
+      getParentItem: () => this.zoteroContext.actualParentItem,
+      getIsRequestInProgress: () => this.runtimeState.isLlmRequestInProgress,
+      setIsRequestInProgress: (isRequestInProgress) => {
+        this.runtimeState.isLlmRequestInProgress = isRequestInProgress;
+      },
+      dispatchRequestStatusChanged:
+        ReaderItemPaneFactory.dispatchRequestStatusChangedEvent,
+      uiManager,
+      chatSessionManager,
+      pdfFileSyncManager: this.pdfFileSyncManager,
+    });
 
     await chatSessionManager.init();
   }
 
   private _initializeUI() {
+    this.managers.uiManager.initProviderSelector();
     this.managers.uiManager.initModelSelector();
-    this.managers.uiManager.initGoogleSearchCheckbox();
-    this.managers.uiManager.initIncludeThoughtsCheckbox();
+    this.managers.uiManager.initWebSearchCheckbox();
+    this.managers.uiManager.initReasoningModeSelector();
     this.managers.uiManager.initSessionSwitcher();
     this.managers.uiManager.initDeleteButton();
     this.managers.uiManager.initRegenerateTitleButton();
@@ -157,7 +175,11 @@ export class ChatPane {
     if (newChatButton) {
       Zotero.log(`[Gemini PDF] _setupEventListeners: newChatButton found.`);
     } else {
-      Zotero.logError(new Error(`[Gemini PDF] _setupEventListeners: newChatButton not found!`));
+      Zotero.logError(
+        new Error(
+          `[Gemini PDF] _setupEventListeners: newChatButton not found!`,
+        ),
+      );
     }
 
     if (
@@ -260,151 +282,35 @@ export class ChatPane {
   }
 
   /**
-   * ユーザーからのメッセージまたは生成されたプロンプトを処理し、Gemini APIに送信します。
+   * ユーザーからのメッセージまたは生成されたプロンプトを処理し、LLMに送信します。
    * UIの更新、セッション履歴への追加、API通信、そしてエラーハンドリングを担当します。
    *
    * @param messageText UIに表示およびセッション履歴に保存するメッセージテキスト。
    *                    通常はユーザーの入力そのままか、PDFアクション時の短い要約。
-   * @param promptText  Gemini APIに送信する実際のプロンプトテキスト。
+   * @param promptText  LLMに送信する実際のプロンプトテキスト。
    *                    messageTextと同じであることもあれば、PDFのコンテキストなど追加情報を含むこともある。
    */
   private async _handleSendMessage(messageText: string, promptText: string) {
-    Zotero.log(
-      `[Gemini PDF] _handleSendMessage called. messageText: "${messageText}", promptText: "${promptText}"`,
-    );
-
-    // 引数として渡された messageText を直接利用
-    if (messageText.trim() === "") {
-      Zotero.log(
-        `[Gemini PDF] _handleSendMessage: messageText is empty. Returning.`,
-      );
-      return;
-    }
-
-    if (this.runtimeState.isGeminiRequestInProgress) {
-      Zotero.debug(`[Gemini PDF] Request in progress. Skipping message send.`);
-      return;
-    }
-
-    const activeSession = this.chatSessionManager.getActiveSession();
-
-    if (!this.zoteroContext.actualParentItem || !activeSession) {
+    if (!this.sendMessageUseCase) {
       Zotero.logError(
-        new Error(
-          "Cannot send message: missing parent item or active session.",
-        ),
+        new Error("SendMessageUseCase not initialized in chatPane."),
       );
       return;
     }
 
-    Zotero.log(
-      `[Gemini PDF] _handleSendMessage: Setting isGeminiRequestInProgress to true.`,
+    this.parentItemFileMetadata = await this.sendMessageUseCase.execute(
+      messageText,
+      promptText,
     );
-    this.runtimeState.isGeminiRequestInProgress = true;
-    ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(this.paneId, true);
-    this.managers.uiManager.setInputsDisabled(true);
-    Zotero.log(`[Gemini PDF] _handleSendMessage: Inputs disabled.`);
-
-    if (!this.parentItemFileMetadata) {
-      this.parentItemFileMetadata =
-        await this.pdfFileSyncManager.ensurePdfContext(
-          this.zoteroContext.actualParentItem,
-          this.managers.uiManager,
-        );
-    }
-
-    if (!this.parentItemFileMetadata) {
-      Zotero.log(
-        `[Gemini PDF] _handleSendMessage: PDF context not ensured. Returning.`,
-      );
-      this.runtimeState.isGeminiRequestInProgress = false;
-      ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(
-        this.paneId,
-        false,
-      );
-      this.managers.uiManager.setInputsDisabled(false);
-      return;
-    }
-
-    // Add user message to UI and history
-    Zotero.log(
-      `[Gemini PDF] _handleSendMessage: Adding user message to UI: "${messageText}"`,
-    );
-    this.managers.uiManager.addUserMessage(messageText);
-    // chatInput.value のクリアは呼び出し元で行う
-
-    Zotero.log(
-      `[Gemini PDF] _handleSendMessage: Adding user message to active session.`,
-    );
-    activeSession.addUserMessage(messageText);
-    Zotero.log(`[Gemini PDF] _handleSendMessage: Saving active session.`);
-    await activeSession.save();
-
-    const botMessageDiv = this.managers.uiManager.addBotMessage(
-      "Typing...",
-      "bot-message",
-    );
-    Zotero.log(
-      `[Gemini PDF] _handleSendMessage: Displaying "Typing..." message.`,
-    );
-
-    try {
-      if (!this.parentItemFileMetadata) {
-        Zotero.logError(new Error("PDF metadata is not available after sync."));
-        throw new Error("PDF metadata is not available after sync.");
-      }
-
-      Zotero.log(
-        `[Gemini PDF] _handleSendMessage: Sending message to active session.`,
-      );
-      const { responseText, thoughts, groundingMetadata } =
-        await activeSession.sendMessage(
-          promptText,
-          this.parentItemFileMetadata,
-        );
-      Zotero.log(
-        `[Gemini PDF] _handleSendMessage: Received response from active session. responseText length: ${responseText?.length}`,
-      );
-
-      this.managers.uiManager.updateBotMessage(
-        botMessageDiv,
-        responseText,
-        thoughts,
-        groundingMetadata,
-      );
-      await activeSession.save(); // Geminiの返答後に履歴を保存
-      Zotero.log(
-        `[Gemini PDF] _handleSendMessage: Updating bot message in UI and saving active session.`,
-      );
-    } catch (error: any) {
-      const errorMessage = error.message || String(error);
-      Zotero.logError(
-        new Error(
-          `[Gemini PDF] _handleSendMessage: Error during message sending: ${errorMessage}`,
-        ),
-      );
-      this.managers.uiManager.updateBotMessage(
-        botMessageDiv,
-        `Error: ${errorMessage}`,
-      );
-    } finally {
-      Zotero.log(`[Gemini PDF] _handleSendMessage: Finally block executed.`);
-      this.runtimeState.isGeminiRequestInProgress = false;
-      ReaderItemPaneFactory.dispatchRequestStatusChangedEvent(
-        this.paneId,
-        false,
-      );
-      this.managers.uiManager.setInputsDisabled(false);
-      Zotero.log(`[Gemini PDF] _handleSendMessage: Inputs re-enabled.`);
-      // chatInput.focus(); は呼び出し元で行う、または UIManager.clearChatInput に含める
-    }
   }
 
   private async _handleNewChat() {
     Zotero.log(`[Gemini PDF] _handleNewChat: New chat button clicked.`);
     const newSession = await this.chatSessionManager.createSession();
     if (newSession) {
-      Zotero.log(`[Gemini PDF] _handleNewChat: New session created with ID: ${newSession.id}`);
+      Zotero.log(
+        `[Gemini PDF] _handleNewChat: New session created with ID: ${newSession.id}`,
+      );
       this.managers.uiManager.clearChatInput();
       this.parentItemFileMetadata = null;
       this.chatSessionManager.switchSession(newSession.id); // UI updates are triggered by this
@@ -412,7 +318,9 @@ export class ChatPane {
         `[Gemini PDF] After _handleNewChat, active session ID: ${this.chatSessionManager.getActiveSession()?.id}`,
       );
     } else {
-      Zotero.logError(new Error("[Gemini PDF] _handleNewChat: Failed to create new session."));
+      Zotero.logError(
+        new Error("[Gemini PDF] _handleNewChat: Failed to create new session."),
+      );
     }
   }
 
@@ -457,10 +365,15 @@ export class ChatPane {
   }
 
   private async _handleGeminiAction(event: CustomEvent) {
-    if (
-      !this.zoteroContext.itemId ||
-      this.zoteroContext.itemId !== event.detail.itemId
-    ) {
+    if (!this.zoteroContext.itemId) {
+      return;
+    }
+
+    if (event.detail.paneId) {
+      if (event.detail.paneId !== this.paneId) {
+        return;
+      }
+    } else if (this.zoteroContext.itemId !== event.detail.itemId) {
       return;
     }
 

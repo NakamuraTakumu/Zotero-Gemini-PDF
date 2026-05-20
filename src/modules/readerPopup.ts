@@ -3,10 +3,7 @@ import { createZToolkit } from "../utils/ztoolkit";
 import { getPref } from "../utils/prefs";
 import { config } from "../../package.json";
 import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
-import {
-  PREF_PROMPT_FOR_SELECTION,
-  PREF_USE_GOOGLE_SEARCH,
-} from "../utils/constants";
+import { PREF_PROMPT_FOR_SELECTION } from "../utils/constants";
 import { ReaderItemPaneFactory } from "./readerItemPane"; // Import ReaderItemPaneFactory
 import { ChatPane } from "./reader/chatPane"; // Import ChatPane
 
@@ -38,7 +35,7 @@ export function buildReaderPopup(
   ReaderItemPaneFactory.getChatPanes().forEach((chatPane: ChatPane) => {
     if (chatPane.zoteroContext.itemId === actualParentItemId) {
       currentPaneId = chatPane.paneId;
-      initialRequestInProgress = chatPane.runtimeState.isGeminiRequestInProgress;
+      initialRequestInProgress = chatPane.runtimeState.isLlmRequestInProgress;
     }
   });
 
@@ -46,7 +43,7 @@ export function buildReaderPopup(
     namespace: "html",
     id: "gemini-pdf-popup-button",
     properties: {
-      innerHTML: `${GEMINI_ICON}Geminiに聞く`,
+      innerHTML: `${GEMINI_ICON}AIに聞く`,
       disabled: initialRequestInProgress, // Set initial disabled state
     },
     styles: {
@@ -112,6 +109,7 @@ export function buildReaderPopup(
               cancelable: true,
               detail: {
                 itemId: actualParentItemId,
+                paneId: currentPaneId,
                 fullPrompt,
                 summaryText,
                 popupTriggerButton: targetButton,
@@ -156,7 +154,7 @@ export function buildReaderPopup(
         button.style.backgroundColor = "#b0b0b0"; // Gray out
       } else {
         button.disabled = false;
-        button.innerHTML = `${GEMINI_ICON}Geminiに聞く`;
+        button.innerHTML = `${GEMINI_ICON}AIに聞く`;
         button.style.backgroundColor = "#4285f4"; // Restore color
       }
     }

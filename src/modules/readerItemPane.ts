@@ -1,14 +1,7 @@
 import { ChatPane } from "./reader/chatPane";
 import { getLocaleID } from "../utils/locale";
-// import { getPref, setPref } from "../utils/prefs"; // Not directly used here
-// import { PREF_SELECTED_MODEL, PREF_USE_GOOGLE_SEARCH, PREF_CONTEXT_WINDOW_SIZE, PREF_CHAT_PANEL_HEIGHT, } from "../utils/constants"; // Not directly used here
-// import { ParentItemFileMetadata } from "../types/chat"; // Not directly used here
 
-
-import { UIManager } from "./reader/ui";
-// import { ChatSessionManager } from "./reader/chatSessionManager"; // ChatSessionManager is now instantiated by ChatPane
-
-import { v4 as uuidv4 } from "uuid";
+import { buildReaderItemPaneBodyXhtml } from "./reader/itemPaneMarkup";
 
 /**
  * A factory class responsible for registering the chat pane UI and its lifecycle hooks with Zotero.
@@ -28,7 +21,7 @@ export class ReaderItemPaneFactory {
   }
   /**
    * Dispatches a global event to notify other parts of the application about the
-   * status of a Gemini API request.
+   * status of an LLM request.
    * @param {string} paneId The ID of the pane triggering the event.
    * @param {boolean} isRequestInProgress The status of the API request.
    */
@@ -67,31 +60,7 @@ export class ReaderItemPaneFactory {
         l10nID: getLocaleID("item-section-example1-sidenav-tooltip"),
         icon: `chrome://${addon.data.config.addonRef}/content/icons/gemini.svg`,
       },
-      bodyXHTML: `<html:div class="chat-container" xmlns:html="http://www.w3.org/1999/xhtml">
-          <html:div class="chat-messages" id="chat-messages"></html:div>
-          <html:div class="chat-resizer" id="chat-resizer"></html:div>
-          <html:div class="chat-session-area">
-              <html:label for="chat-session-switcher">Session:</html:label>
-              <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
-              <html:button id="delete-session-button" class="delete-session-button">🗑️</html:button>
-              <html:button id="regenerate-title-button" class="regenerate-title-button" title="Regenerate title">↻</html:button>
-          </html:div>
-          <html:div class="chat-model-selector-area">
-              <html:label for="gemini-model-select">Model:</html:label>
-              <html:select id="gemini-model-select" class="gemini-model-select"></html:select>
-                                      <html:label for="use-google-search-checkbox">Use Google Search:</html:label>
-                                      <html:input type="checkbox" id="use-google-search-checkbox" />
-                                      <html:label for="include-thoughts-checkbox">Include Thoughts:</html:label>
-                                      <html:input type="checkbox" id="include-thoughts-checkbox" />          </html:div>
-                                      
-          <html:div class="chat-input-area">
-              <html:textarea id="chat-input" class="chat-input" placeholder="Type a message..."></html:textarea>
-              <html:div class="chat-buttons-container">
-                                    <html:button id="send-button" class="send-button">Send</html:button>
-                                    <html:button id="new-chat-button" class="new-chat-button">New</html:button>
-              </html:div>
-          </html:div>
-      </html:div>`,
+      bodyXHTML: buildReaderItemPaneBodyXhtml(),
       onInit: ({ body }) => {
         Zotero.log("[Gemini PDF] onInit called.");
         try {

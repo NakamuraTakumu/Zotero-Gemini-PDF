@@ -7,7 +7,7 @@ declare const config: {
 };
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
-import GlobalChatManager from './modules/globalChatManager'; // Import GlobalChatManager
+import GlobalChatManager from "./modules/globalChatManager"; // Import GlobalChatManager
 
 declare class Addon {
   data: {
