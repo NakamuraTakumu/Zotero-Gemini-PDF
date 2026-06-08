@@ -53,20 +53,20 @@ export class ChatPane {
     this.parentItemFileMetadata = null;
 
     const eventHandler = (event: Event) =>
-      this._handleGeminiAction(event as CustomEvent);
+      this._handleAskMyPaperAction(event as CustomEvent);
     this.runtimeState = {
       eventHandler: eventHandler as (event: CustomEvent) => void,
       isLlmRequestInProgress: false,
     };
 
     Zotero.getMainWindow().document.addEventListener(
-      "gemini-pdf-action",
+      "ask-my-paper-action",
       eventHandler,
     );
   }
 
   public async render(item: Zotero.Item) {
-    Zotero.log(`[Gemini PDF] ChatPane.render called for item: ${item.id}`);
+    Zotero.log(`[Ask My Paper] ChatPane.render called for item: ${item.id}`);
     const actualParentItem: Zotero.Item | null =
       item.isAttachment() && item.parentID
         ? await Zotero.Items.getAsync(item.parentID)
@@ -91,7 +91,7 @@ export class ChatPane {
   }
 
   private async _initializeManagers(actualParentItem: Zotero.Item | null) {
-    Zotero.log(`[Gemini PDF] ChatPane._initializeManagers called.`);
+    Zotero.log(`[Ask My Paper] ChatPane._initializeManagers called.`);
     if (!actualParentItem) {
       Zotero.logError(
         new Error("Cannot initialize managers, no parent item found."),
@@ -162,7 +162,7 @@ export class ChatPane {
   }
 
   private _setupEventListeners() {
-    Zotero.log(`[Gemini PDF] ChatPane._setupEventListeners called.`);
+    Zotero.log(`[Ask My Paper] ChatPane._setupEventListeners called.`);
     const { body } = this.uiElements;
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
     const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
@@ -173,11 +173,11 @@ export class ChatPane {
     ) as HTMLButtonElement;
 
     if (newChatButton) {
-      Zotero.log(`[Gemini PDF] _setupEventListeners: newChatButton found.`);
+      Zotero.log(`[Ask My Paper] _setupEventListeners: newChatButton found.`);
     } else {
       Zotero.logError(
         new Error(
-          `[Gemini PDF] _setupEventListeners: newChatButton not found!`,
+          `[Ask My Paper] _setupEventListeners: newChatButton not found!`,
         ),
       );
     }
@@ -239,7 +239,7 @@ export class ChatPane {
       this.zoteroContext.itemId = undefined;
     }
     Zotero.log(
-      `[Gemini PDF] Pane ${this.paneId} onRender: Stored itemId is ${this.zoteroContext.itemId}`,
+      `[Ask My Paper] Pane ${this.paneId} onRender: Stored itemId is ${this.zoteroContext.itemId}`,
     );
     this.zoteroContext.actualParentItem = actualParentItem;
 
@@ -305,21 +305,23 @@ export class ChatPane {
   }
 
   private async _handleNewChat() {
-    Zotero.log(`[Gemini PDF] _handleNewChat: New chat button clicked.`);
+    Zotero.log(`[Ask My Paper] _handleNewChat: New chat button clicked.`);
     const newSession = await this.chatSessionManager.createSession();
     if (newSession) {
       Zotero.log(
-        `[Gemini PDF] _handleNewChat: New session created with ID: ${newSession.id}`,
+        `[Ask My Paper] _handleNewChat: New session created with ID: ${newSession.id}`,
       );
       this.managers.uiManager.clearChatInput();
       this.parentItemFileMetadata = null;
       this.chatSessionManager.switchSession(newSession.id); // UI updates are triggered by this
       Zotero.log(
-        `[Gemini PDF] After _handleNewChat, active session ID: ${this.chatSessionManager.getActiveSession()?.id}`,
+        `[Ask My Paper] After _handleNewChat, active session ID: ${this.chatSessionManager.getActiveSession()?.id}`,
       );
     } else {
       Zotero.logError(
-        new Error("[Gemini PDF] _handleNewChat: Failed to create new session."),
+        new Error(
+          "[Ask My Paper] _handleNewChat: Failed to create new session.",
+        ),
       );
     }
   }
@@ -364,7 +366,7 @@ export class ChatPane {
     doc.addEventListener("mouseup", stopDrag, false);
   }
 
-  private async _handleGeminiAction(event: CustomEvent) {
+  private async _handleAskMyPaperAction(event: CustomEvent) {
     if (!this.zoteroContext.itemId) {
       return;
     }
@@ -378,15 +380,15 @@ export class ChatPane {
     }
 
     Zotero.log(
-      `[Gemini PDF] Action event received for matching item ${this.zoteroContext.itemId}`,
+      `[Ask My Paper] Action event received for matching item ${this.zoteroContext.itemId}`,
     );
     Zotero.log(
-      `[Gemini PDF] _handleGeminiAction: event.detail: ${JSON.stringify(event.detail)}`,
+      `[Ask My Paper] _handleAskMyPaperAction: event.detail: ${JSON.stringify(event.detail)}`,
     );
 
     const { fullPrompt, summaryText } = event.detail;
     Zotero.log(
-      `[Gemini PDF] _handleGeminiAction: fullPrompt: ${fullPrompt}, summaryText: ${summaryText}`,
+      `[Ask My Paper] _handleAskMyPaperAction: fullPrompt: ${fullPrompt}, summaryText: ${summaryText}`,
     );
 
     // For now, we reuse the general send message handler
@@ -397,7 +399,7 @@ export class ChatPane {
     // Remove global listener
     if (this.runtimeState.eventHandler) {
       Zotero.getMainWindow().document.removeEventListener(
-        "gemini-pdf-action",
+        "ask-my-paper-action",
         this.runtimeState.eventHandler,
       );
     }

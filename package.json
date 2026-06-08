@@ -1,14 +1,14 @@
 {
-  "name": "gemini-pdf",
+  "name": "ask-my-paper",
   "type": "module",
   "version": "1.0.0",
-  "description": "Gemini PDF Plugin",
+  "description": "Ask My Paper Plugin",
   "config": {
-    "addonName": "Gemini PDF",
-    "addonID": "geminipdf@euclpts.com",
-    "addonRef": "geminipdf",
-    "addonInstance": "GeminiPDF",
-    "prefsPrefix": "extensions.zotero.GeminiPDF",
+    "addonName": "Ask My Paper",
+    "addonID": "ask-my-paper@euclpts.com",
+    "addonRef": "askmypaper",
+    "addonInstance": "AskMyPaper",
+    "prefsPrefix": "extensions.zotero.AskMyPaper",
     "logLevel": "DEBUG"
   },
   "repository": {

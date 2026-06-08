@@ -1,4 +1,5 @@
 import {
+  PREF_CITATION_RENDER_PROVIDER,
   PREF_LLM_PROVIDER,
   PREF_TITLE_GENERATION_PROVIDER,
 } from "../../utils/constants";
@@ -26,6 +27,11 @@ export function setSelectedProvider(provider: ProviderId): void {
 export function getTitleGenerationProvider(): ProviderId {
   const value = getPref(PREF_TITLE_GENERATION_PROVIDER);
   return isProviderId(value) ? value : getSelectedProvider();
+}
+
+export function getCitationRenderProvider(): ProviderId {
+  const value = getPref(PREF_CITATION_RENDER_PROVIDER);
+  return isProviderId(value) ? value : "gemini";
 }
 
 export function getProviderApiKey(provider: ProviderId): string {

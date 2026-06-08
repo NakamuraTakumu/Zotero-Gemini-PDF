@@ -1,6 +1,6 @@
-import { ChatMessage, ProviderId } from "../../types/chat";
+import { StoredMessage } from "@langchain/core/messages";
+import { ProviderId } from "../../types/chat";
 import { getPref } from "../../utils/prefs";
-import { stripThoughtsFromText } from "../../utils/thoughts";
 import {
   PREF_CONTEXT_WINDOW_SIZE,
   PREF_TITLE_GENERATION_MODEL,
@@ -9,25 +9,25 @@ import {
 } from "../../utils/constants";
 import { getProviderConfig, parseModelList } from "../../utils/providerConfig";
 import { sendMessageToLlm } from "../llm/chat";
+import { toStoredMessageView } from "../llm/langChainMessages";
 import { getTitleGenerationProvider, isProviderId } from "../llm/provider";
 
 export class TitleGenerationService {
   async generateInitialTitle(
-    history: ChatMessage[],
+    history: StoredMessage[],
   ): Promise<string | undefined> {
     if (history.length < 2) {
       return undefined;
     }
 
-    const userPrompt = history[0].parts[0].text;
-    const firstModelMessage = history[1];
-    const modelResponse = this.getDisplayText(firstModelMessage);
+    const userPrompt = this.getDisplayText(history[0]);
+    const modelResponse = this.getDisplayText(history[1]);
     const titlePrompt = this.buildBasePrompt(userPrompt, modelResponse);
     return this.requestTitle(titlePrompt);
   }
 
   async regenerateTitleFromTopHistory(
-    history: ChatMessage[],
+    history: StoredMessage[],
   ): Promise<string | undefined> {
     if (history.length === 0) {
       return undefined;
@@ -36,18 +36,21 @@ export class TitleGenerationService {
     const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
     const historyForTitle =
       historyLimit > 0 ? history.slice(0, historyLimit) : [...history];
-    const firstUserMessage = historyForTitle.find((m) => m.role === "user");
-    const firstModelMessage = historyForTitle.find((m) => m.role === "model");
-    const userPrompt = firstUserMessage?.parts?.[0]?.text || "";
+    const views = historyForTitle.map((message) =>
+      toStoredMessageView(message),
+    );
+    const firstUserMessage = views.find((m) => m.role === "user");
+    const firstModelMessage = views.find((m) => m.role === "assistant");
+    const userPrompt = firstUserMessage?.displayText || "";
     const modelResponse = firstModelMessage
-      ? this.getDisplayText(firstModelMessage)
+      ? firstModelMessage.displayText
       : "";
     const basePrompt = this.buildBasePrompt(userPrompt, modelResponse);
 
-    const historyTranscript = historyForTitle
+    const historyTranscript = views
       .map((message, index) => {
         const roleLabel = message.role === "user" ? "User" : "Assistant";
-        const text = this.getDisplayText(message);
+        const text = message.displayText;
         return `${index + 1}. ${roleLabel}: ${text}`;
       })
       .join("\n");
@@ -59,11 +62,8 @@ export class TitleGenerationService {
     return this.requestTitle(titlePrompt);
   }
 
-  private getDisplayText(message: ChatMessage): string {
-    const rawText = message.parts?.[0]?.text || "";
-    return message.role === "model"
-      ? stripThoughtsFromText(rawText, message.thoughts)
-      : rawText;
+  private getDisplayText(message: StoredMessage): string {
+    return toStoredMessageView(message).displayText;
   }
 
   private buildBasePrompt(userPrompt: string, modelResponse: string): string {
@@ -77,7 +77,7 @@ export class TitleGenerationService {
     const providerForTitle = getTitleGenerationProvider();
     const modelForTitle = this.getTitleGenerationModel(providerForTitle);
     Zotero.log(
-      `[Gemini PDF] Title generation request: provider=${providerForTitle}, model=${modelForTitle}, webSearch=false, reasoning=off`,
+      `[Ask My Paper] Title generation request: provider=${providerForTitle}, model=${modelForTitle}, webSearch=false, reasoning=off`,
     );
     const { responseText } = await sendMessageToLlm([], titlePrompt, {
       provider: providerForTitle,

@@ -1,8 +1,8 @@
-// gemini-pdf/src/modules/readerPopup.ts
+// ask-my-paper/src/modules/readerPopup.ts
 import { createZToolkit } from "../utils/ztoolkit";
 import { getPref } from "../utils/prefs";
 import { config } from "../../package.json";
-import { GEMINI_ICON } from "../utils/icon"; // Import GEMINI_ICON
+import { ASK_MY_PAPER_ICON } from "../utils/icon";
 import { PREF_PROMPT_FOR_SELECTION } from "../utils/constants";
 import { ReaderItemPaneFactory } from "./readerItemPane"; // Import ReaderItemPaneFactory
 import { ChatPane } from "./reader/chatPane"; // Import ChatPane
@@ -41,9 +41,9 @@ export function buildReaderPopup(
 
   const button = ztoolkit.UI.createElement(doc, "button", {
     namespace: "html",
-    id: "gemini-pdf-popup-button",
+    id: "ask-my-paper-popup-button",
     properties: {
-      innerHTML: `${GEMINI_ICON}AIに聞く`,
+      innerHTML: `${ASK_MY_PAPER_ICON}AIに聞く`,
       disabled: initialRequestInProgress, // Set initial disabled state
     },
     styles: {
@@ -67,7 +67,7 @@ export function buildReaderPopup(
           // Now rely on the current state after event listeners have updated
           if (button.disabled) {
             Zotero.debug(
-              `[Gemini PDF] Request already in progress for item ${actualParentItemId}. Skipping.`,
+              `[Ask My Paper] Request already in progress for item ${actualParentItemId}. Skipping.`,
             );
             return;
           }
@@ -100,10 +100,10 @@ export function buildReaderPopup(
           }
 
           Zotero.log(
-            `[Gemini PDF] Dispatching gemini-pdf-action for itemId: ${actualParentItemId}`,
+            `[Ask My Paper] Dispatching ask-my-paper-action for itemId: ${actualParentItemId}`,
           );
           const actionEvent = new (Zotero.getMainWindow() as any).CustomEvent(
-            "gemini-pdf-action",
+            "ask-my-paper-action",
             {
               bubbles: true,
               cancelable: true,
@@ -154,14 +154,14 @@ export function buildReaderPopup(
         button.style.backgroundColor = "#b0b0b0"; // Gray out
       } else {
         button.disabled = false;
-        button.innerHTML = `${GEMINI_ICON}AIに聞く`;
+        button.innerHTML = `${ASK_MY_PAPER_ICON}AIに聞く`;
         button.style.backgroundColor = "#4285f4"; // Restore color
       }
     }
   };
 
   Zotero.getMainWindow().document.addEventListener(
-    "gemini-pdf-request-status-changed",
+    "ask-my-paper-request-status-changed",
     requestStatusChangeListener,
   );
 

@@ -1,5 +1,4 @@
-import { getPref, setPref } from "../../utils/prefs";
-import { stripThoughtsFromText } from "../../utils/thoughts";
+import { getPref, getPrefPath, setPref } from "../../utils/prefs";
 import {
   PREF_LLM_PROVIDER,
   PREF_REASONING_MODE,
@@ -13,10 +12,16 @@ import {
   setSelectedModel,
   setSelectedProvider,
 } from "../llm/provider";
-import { LlmCitation, ProviderId } from "../../types/chat";
+import { toStoredMessageView } from "../llm/langChainMessages";
+import { LlmCitation, LlmDiagnostics, ProviderId } from "../../types/chat";
 
 import { ChatSessionManager } from "./chatSessionManager";
 import { ChatSession } from "./chatSession";
+import {
+  formatPdfCitationSource,
+  parsePdfCitationLocator,
+  recoverPdfCitationText,
+} from "../pdfCitation";
 import MarkdownIt from "markdown-it";
 import createDOMPurify from "dompurify";
 import markdownItKatex from "@vscode/markdown-it-katex";
@@ -24,8 +29,95 @@ import markdownItContainer from "markdown-it-container";
 import markdownItCollapsible from "markdown-it-collapsible";
 import type { Token } from "markdown-it";
 
+const MESSAGE_HTML_SANITIZE_OPTIONS = {
+  ADD_TAGS: [
+    "math",
+    "mi",
+    "mo",
+    "mn",
+    "mtext",
+    "mrow",
+    "mfrac",
+    "msup",
+    "msub",
+    "msubsup",
+    "mover",
+    "munder",
+    "munderover",
+    "msqrt",
+    "mroot",
+    "mfenced",
+    "menclose",
+    "mstyle",
+    "mphantom",
+    "mglyph",
+    "mlabeledtr",
+    "mtable",
+    "mtr",
+    "mtd",
+    "maligngroup",
+    "malignmark",
+    "msgroup",
+    "msrow",
+    "mscol",
+    "msline",
+    "semantics",
+    "annotation",
+    "annotation-xml",
+  ],
+  ADD_ATTR: [
+    "xmlns",
+    "encoding",
+    "class",
+    "aria-hidden",
+    "data-citation-locator",
+    "data-original-quote",
+    "target",
+    "rel",
+    "open",
+    "mathvariant",
+    "stretchy",
+    "separator",
+    "accent",
+    "fence",
+    "largeop",
+    "lspace",
+    "rspace",
+    "scriptlevel",
+    "displaystyle",
+  ],
+  FORBID_TAGS: ["script", "iframe", "object", "embed"],
+};
+
+interface MarkdownRenderer {
+  renderMarkdown: (text: string) => string;
+  sanitizeHtmlToFragment: (html: string) => DocumentFragment;
+}
+
+function toSafePdfCitationSource(locator: {
+  libraryID: number;
+  attachmentKey: string;
+}): string {
+  try {
+    return formatPdfCitationSource({
+      libraryID: locator.libraryID,
+      attachmentKey: locator.attachmentKey,
+      start: 0,
+      end: 1,
+    });
+  } catch (error: any) {
+    const message = error.message || String(error);
+    Zotero.logError(
+      new Error(
+        `[Ask My Paper] Failed to resolve PDF citation source: ${message}`,
+      ),
+    );
+    return `PDF ${locator.attachmentKey}`;
+  }
+}
+
 // Helper for rendering markdown (moved from chat.ts)
-const initMarkdownRenderer = (window: Window) => {
+const initMarkdownRenderer = (window: Window): MarkdownRenderer => {
   const DOMPurify = createDOMPurify(window as any); // Cast window to any
 
   // Handle CJS/ESM interop issue with the imported module
@@ -34,102 +126,93 @@ const initMarkdownRenderer = (window: Window) => {
       ? markdownItKatex
       : (markdownItKatex as any).default;
 
-  const md = new MarkdownIt({ xhtmlOut: true })
-    .use(markdownItContainer, "citation", {
-      validate: function (params: string) {
-        return params.trim().match(/^citation\s+(.*)\|(.+)/);
-      },
-      render: function (tokens: Token[], idx: number) {
-        if (tokens[idx].nesting === 1) {
-          const m = tokens[idx].info.trim().match(/^citation\s+(.*)\|(.+)/);
-          if (m) {
-            const source = md.renderInline(m[1].trim());
-            const originalSourceText = m[1].trim(); // {引用元}の部分
-            const originalRawText = m[2].trim(); // {原文(Raw)}の部分
-            const originalQuote = md.utils.escapeHtml(originalRawText); // {原文(Raw)}をHTMLエスケープ済み
-            return (
-              `<div class="citation-container" data-original-quote="${originalQuote}">\n` + // title属性にoriginalQuoteを設定
-              `<div class="citation-source">${source}</div>\n` +
-              `<div class="citation-content">\n`
-            );
-          }
-        } else {
-          return "</div>\n</div>\n";
-        }
-        return "";
-      },
-    })
-    .use(katexPlugin, {
+  const createMarkdownItRenderer = (options: {
+    citationContainer: boolean;
+    collapsible: boolean;
+  }) => {
+    const md = new MarkdownIt({ xhtmlOut: true }).use(katexPlugin, {
       throwOnError: false,
       errorColor: "#cc0000",
       output: "mathml",
       strict: false,
-    })
-    .use(markdownItCollapsible);
-
-  return (text: string): string => {
-    const sanitizedText = DOMPurify.sanitize(text, {
-      ADD_TAGS: [
-        "math",
-        "mi",
-        "mo",
-        "mn",
-        "mtext",
-        "mrow",
-        "mfrac",
-        "msup",
-        "msub",
-        "msubsup",
-        "mover",
-        "munder",
-        "munderover",
-        "msqrt",
-        "mroot",
-        "mfenced",
-        "menclose",
-        "mstyle",
-        "mphantom",
-        "mglyph",
-        "mlabeledtr",
-        "mtable",
-        "mtr",
-        "mtd",
-        "maligngroup",
-        "malignmark",
-        "msgroup",
-        "msrow",
-        "mscol",
-        "msline",
-        "semantics",
-        "annotation",
-        "annotation-xml",
-        "span",
-        "svg",
-        "path",
-        "g",
-        "rect",
-        "use",
-      ],
-      ADD_ATTR: [
-        "xmlns",
-        "encoding",
-        "class",
-        "aria-hidden",
-        "width",
-        "height",
-        "viewBox",
-        "x",
-        "y",
-        "transform",
-        "fill",
-        "stroke",
-        "stroke-width",
-        "d",
-        "style",
-        "fill-opacity",
-      ],
     });
-    return md.render(sanitizedText);
+
+    if (options.citationContainer) {
+      md.use(markdownItContainer, "citation", {
+        validate: function (params: string) {
+          const trimmed = params.trim();
+          return (
+            /^citation\s+\{.*\}$/.test(trimmed) ||
+            /^citation\s+(.*)\|(.+)/.test(trimmed)
+          );
+        },
+        render: function (tokens: Token[], idx: number) {
+          if (tokens[idx].nesting === 1) {
+            const info = tokens[idx].info.trim();
+            const jsonPayload = info.replace(/^citation\s+/, "");
+            const locator = parsePdfCitationLocator(jsonPayload);
+            if (locator) {
+              const source = md.renderInline(toSafePdfCitationSource(locator));
+              const locatorAttribute = md.utils.escapeHtml(jsonPayload);
+              return (
+                `<div class="citation-container" data-citation-locator="${locatorAttribute}">\n` +
+                `<div class="citation-source">${source}</div>\n` +
+                `<div class="citation-content">\n`
+              );
+            }
+
+            const m = info.match(/^citation\s+(.*)\|(.+)/);
+            if (m) {
+              const source = md.renderInline(m[1].trim());
+              const originalRawText = m[2].trim();
+              const originalQuote = md.utils.escapeHtml(originalRawText);
+              return (
+                `<div class="citation-container" data-original-quote="${originalQuote}">\n` +
+                `<div class="citation-source">${source}</div>\n` +
+                `<div class="citation-content">\n`
+              );
+            }
+          } else {
+            return "</div>\n</div>\n";
+          }
+          return "";
+        },
+      });
+    }
+
+    if (options.collapsible) {
+      md.use(markdownItCollapsible);
+    }
+
+    return md;
+  };
+
+  const fullRenderer = createMarkdownItRenderer({
+    citationContainer: true,
+    collapsible: true,
+  });
+
+  const sanitizeHtmlToFragment = (html: string): DocumentFragment =>
+    (DOMPurify.sanitize(html, {
+      ...MESSAGE_HTML_SANITIZE_OPTIONS,
+      RETURN_DOM_FRAGMENT: true,
+    } as any) as unknown) as DocumentFragment;
+
+  return {
+    renderMarkdown(text: string): string {
+      try {
+        return fullRenderer.render(text || "");
+      } catch (error: any) {
+        const message = error.message || String(error);
+        Zotero.logError(
+          new Error(
+            `[Ask My Paper] Markdown render failed: ${message}`,
+          ),
+        );
+        throw error;
+      }
+    },
+    sanitizeHtmlToFragment,
   };
 };
 
@@ -143,6 +226,7 @@ export class UIManager {
   private prefObserverKeys: symbol[] = [];
   private chatSessionManager: ChatSessionManager;
   public renderMarkdown: (text: string) => string;
+  private sanitizeMessageHtmlToFragment: (html: string) => DocumentFragment;
   private citationPopup: HTMLDivElement; // 追加
   private messageContextMenu: HTMLDivElement;
   private contextMenuTargetMessage: HTMLElement | null = null;
@@ -159,7 +243,10 @@ export class UIManager {
     this.chatSessionManager = chatSessionManager;
     this.chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
     this.sendButton = body.querySelector("#send-button") as HTMLButtonElement;
-    this.renderMarkdown = initMarkdownRenderer(doc.defaultView as Window);
+    const markdownRenderer = initMarkdownRenderer(doc.defaultView as Window);
+    this.renderMarkdown = markdownRenderer.renderMarkdown;
+    this.sanitizeMessageHtmlToFragment =
+      markdownRenderer.sanitizeHtmlToFragment;
 
     // citationPopupの初期化
     this.citationPopup = this.doc.createElementNS(
@@ -214,7 +301,7 @@ export class UIManager {
 
   registerPrefObservers() {
     const providerObserverKey = Zotero.Prefs.registerObserver(
-      `extensions.zotero.GeminiPDF.${PREF_LLM_PROVIDER}`,
+      getPrefPath(PREF_LLM_PROVIDER),
       () => {
         this.refreshProviderControls();
       },
@@ -224,7 +311,7 @@ export class UIManager {
     PROVIDERS.forEach((provider) => {
       const prefKey = PROVIDER_CONFIGS[provider].selectedModelPref;
       const modelObserverKey = Zotero.Prefs.registerObserver(
-        `extensions.zotero.GeminiPDF.${prefKey}`,
+        getPrefPath(prefKey),
         () => {
           this.initModelSelector();
         },
@@ -233,7 +320,7 @@ export class UIManager {
     });
 
     const webSearchObserverKey = Zotero.Prefs.registerObserver(
-      `extensions.zotero.GeminiPDF.${PREF_USE_WEB_SEARCH}`,
+      getPrefPath(PREF_USE_WEB_SEARCH),
       () => {
         const useWebSearchCheckbox = this.body.querySelector(
           "#use-web-search-checkbox",
@@ -242,7 +329,7 @@ export class UIManager {
           const useWebSearch = getPref(PREF_USE_WEB_SEARCH) as boolean;
           useWebSearchCheckbox.checked = useWebSearch;
           Zotero.log(
-            `[Gemini PDF] Pref observer updated Web Search to: ${useWebSearch}`,
+            `[Ask My Paper] Pref observer updated Web Search to: ${useWebSearch}`,
           );
         }
       },
@@ -250,7 +337,7 @@ export class UIManager {
     this.prefObserverKeys.push(webSearchObserverKey);
 
     const reasoningModeObserverKey = Zotero.Prefs.registerObserver(
-      `extensions.zotero.GeminiPDF.${PREF_REASONING_MODE}`,
+      getPrefPath(PREF_REASONING_MODE),
       () => {
         this.initReasoningModeSelector();
       },
@@ -262,7 +349,7 @@ export class UIManager {
     this.prefObserverKeys.forEach((key) =>
       Zotero.Prefs.unregisterObserver(key),
     );
-    Zotero.log("[Gemini PDF] Unregistered preference observers.");
+    Zotero.log("[Ask My Paper] Unregistered preference observers.");
     this.prefObserverKeys = [];
   }
 
@@ -278,7 +365,7 @@ export class UIManager {
       const provider = (e.target as HTMLSelectElement).value as ProviderId;
       setSelectedProvider(provider);
       this.refreshProviderControls();
-      Zotero.log(`[Gemini PDF] UI: Provider changed to: ${provider}.`);
+      Zotero.log(`[Ask My Paper] UI: Provider changed to: ${provider}.`);
     };
     this.refreshProviderControls();
   }
@@ -303,7 +390,7 @@ export class UIManager {
     const availableModels = getProviderModelList(provider);
     const selectedModel = getSelectedModel(provider);
     Zotero.log(
-      `[Gemini PDF] UI: Initializing model selector. Provider=${provider}, selected='${selectedModel}'.`,
+      `[Ask My Paper] UI: Initializing model selector. Provider=${provider}, selected='${selectedModel}'.`,
     );
 
     modelSelect.innerHTML = "";
@@ -333,7 +420,7 @@ export class UIManager {
 
     modelSelect.onchange = (e) => {
       const newValue = (e.target as HTMLSelectElement).value;
-      Zotero.log(`[Gemini PDF] UI: Model selection changed to: ${newValue}.`);
+      Zotero.log(`[Ask My Paper] UI: Model selection changed to: ${newValue}.`);
       setSelectedModel(getSelectedProvider(), newValue);
     };
   }
@@ -346,14 +433,14 @@ export class UIManager {
 
     const useWebSearch = getPref(PREF_USE_WEB_SEARCH) as boolean;
     Zotero.log(
-      `[Gemini PDF] UI: Initializing Web Search checkbox. Saved PREF_USE_WEB_SEARCH value is: ${useWebSearch}.`,
+      `[Ask My Paper] UI: Initializing Web Search checkbox. Saved PREF_USE_WEB_SEARCH value is: ${useWebSearch}.`,
     );
     useWebSearchCheckbox.checked = useWebSearch;
 
     useWebSearchCheckbox.addEventListener("change", (e) => {
       const newValue = (e.target as HTMLInputElement).checked;
       setPref(PREF_USE_WEB_SEARCH, newValue);
-      Zotero.log(`[Gemini PDF] UI: Use Web Search changed to: ${newValue}.`);
+      Zotero.log(`[Ask My Paper] UI: Use Web Search changed to: ${newValue}.`);
     });
   }
 
@@ -365,14 +452,14 @@ export class UIManager {
 
     const reasoningMode = (getPref(PREF_REASONING_MODE) as string) || "off";
     Zotero.log(
-      `[Gemini PDF] UI: Initializing Thinking selector. Saved PREF_REASONING_MODE value is: ${reasoningMode}.`,
+      `[Ask My Paper] UI: Initializing Thinking selector. Saved PREF_REASONING_MODE value is: ${reasoningMode}.`,
     );
     reasoningModeSelect.value = reasoningMode;
 
     reasoningModeSelect.onchange = (e) => {
       const newValue = (e.target as HTMLSelectElement).value;
       setPref(PREF_REASONING_MODE, newValue);
-      Zotero.log(`[Gemini PDF] UI: Thinking mode changed to: ${newValue}.`);
+      Zotero.log(`[Ask My Paper] UI: Thinking mode changed to: ${newValue}.`);
     };
   }
 
@@ -409,7 +496,7 @@ export class UIManager {
 
     const sessions = this.chatSessionManager.getAllSessions();
     Zotero.log(
-      `[Gemini PDF] UIManager.renderSessionSwitcherList: Rendering ${sessions.length} sessions.`,
+      `[Ask My Paper] UIManager.renderSessionSwitcherList: Rendering ${sessions.length} sessions.`,
     );
 
     sessionSwitcher.innerHTML = "";
@@ -436,7 +523,7 @@ export class UIManager {
     if (activeSession) {
       sessionSwitcher.value = activeSession.id;
       Zotero.log(
-        `[Gemini PDF] UIManager.updateSessionSwitcherSelection: Selected session ID: ${activeSession.id}`,
+        `[Ask My Paper] UIManager.updateSessionSwitcherSelection: Selected session ID: ${activeSession.id}`,
       );
     }
   }
@@ -450,7 +537,7 @@ export class UIManager {
     deleteButton.onclick = async () => {
       const activeSession = this.chatSessionManager.getActiveSession();
       if (!activeSession) {
-        Zotero.debug("[Gemini PDF] No active session to delete.");
+        Zotero.debug("[Ask My Paper] No active session to delete.");
         return;
       }
 
@@ -459,13 +546,15 @@ export class UIManager {
       );
 
       if (confirmDelete) {
-        Zotero.debug(`[Gemini PDF] Deleting session: ${activeSession.title}`);
+        Zotero.debug(`[Ask My Paper] Deleting session: ${activeSession.title}`);
         const success = await this.chatSessionManager.deleteActiveSession();
         if (success) {
           // ドロップダウンの更新はdeleteActiveSession内のonActiveSessionChangeコールバックがトリガーする
           // ここで直接updateSessionSwitcher()を呼ぶ必要はない
         } else {
-          Zotero.logError(new Error("[Gemini PDF] Failed to delete session."));
+          Zotero.logError(
+            new Error("[Ask My Paper] Failed to delete session."),
+          );
         }
       }
     };
@@ -480,7 +569,7 @@ export class UIManager {
     regenerateButton.onclick = async () => {
       const activeSession = this.chatSessionManager.getActiveSession();
       if (!activeSession) {
-        Zotero.debug("[Gemini PDF] No active session to regenerate title.");
+        Zotero.debug("[Ask My Paper] No active session to regenerate title.");
         return;
       }
 
@@ -489,13 +578,13 @@ export class UIManager {
         const success = await activeSession.regenerateTitleFromTopHistory();
         if (!success) {
           Zotero.logError(
-            new Error("[Gemini PDF] Failed to regenerate session title."),
+            new Error("[Ask My Paper] Failed to regenerate session title."),
           );
         }
       } catch (e: any) {
         Zotero.logError(
           new Error(
-            `[Gemini PDF] Error regenerating session title: ${
+            `[Ask My Paper] Error regenerating session title: ${
               e.message || String(e)
             }`,
           ),
@@ -511,29 +600,29 @@ export class UIManager {
     if (!session) {
       return;
     }
-    session.history.history.forEach((message) => {
+    session.history.messages.forEach((storedMessage) => {
+      const message = toStoredMessageView(storedMessage);
       const messageDiv = this.doc.createElementNS(
         "http://www.w3.org/1999/xhtml",
         "div",
       ) as HTMLDivElement;
       const roleClass =
-        message.role === "model" ? "bot-message" : "user-message";
+        message.role === "assistant" ? "bot-message" : "user-message";
       messageDiv.className = `message ${roleClass}`;
-      const displayText =
-        message.role === "model"
-          ? stripThoughtsFromText(message.parts[0].text, message.thoughts)
-          : message.parts[0].text;
-      let messageHtml = this.renderMarkdown(displayText);
-      if (message.role === "model") {
+      const displayText = message.displayText;
+      if (message.role === "assistant") {
+        let messageHtml = this.renderMarkdown(displayText);
         messageHtml += this.renderMessageDetails(
-          message.provider,
-          message.model,
-          message.thoughts,
-          message.citations,
-          message.groundingMetadata,
+          message.metadata.provider,
+          message.metadata.model,
+          message.metadata.thoughts,
+          message.metadata.citations,
+          message.metadata.llmDiagnostics,
         );
+        this.setMessageHtml(messageDiv, messageHtml, displayText);
+      } else {
+        messageDiv.textContent = displayText;
       }
-      messageDiv.innerHTML = messageHtml;
       messageDiv.dataset.rawText = displayText || "";
       this.chatMessages.appendChild(messageDiv);
       this._attachMiddleClickHandler(messageDiv as HTMLElement);
@@ -549,7 +638,7 @@ export class UIManager {
       "div",
     ) as HTMLDivElement;
     userMessageDiv.className = "message user-message";
-    userMessageDiv.innerHTML = this.renderMarkdown(text);
+    userMessageDiv.textContent = text;
     userMessageDiv.dataset.rawText = text;
     this.chatMessages.appendChild(userMessageDiv);
     this._attachMiddleClickHandler(userMessageDiv as HTMLElement);
@@ -567,7 +656,7 @@ export class UIManager {
       "div",
     ) as HTMLDivElement;
     div.className = `message ${className}`;
-    div.innerHTML = html;
+    this.setMessageHtml(div, html, html);
     div.dataset.rawText = html;
     this.chatMessages.appendChild(div);
     this._attachMiddleClickHandler(div as HTMLElement);
@@ -581,10 +670,10 @@ export class UIManager {
     element: HTMLDivElement,
     responseText: string,
     thoughts?: string[],
-    groundingMetadata?: any,
     citations?: LlmCitation[],
     provider?: ProviderId,
     model?: string,
+    diagnostics?: LlmDiagnostics,
   ) => {
     let messageHtml = this.renderMarkdown(responseText || "No response.");
     messageHtml += this.renderMessageDetails(
@@ -592,9 +681,9 @@ export class UIManager {
       model,
       thoughts,
       citations,
-      groundingMetadata,
+      diagnostics,
     );
-    element.innerHTML = messageHtml;
+    this.setMessageHtml(element, messageHtml, responseText || "");
     element.dataset.rawText = responseText || "";
     this._attachMiddleClickHandler(element as HTMLElement);
     this._attachMessageContextMenuHandler(element as HTMLElement);
@@ -602,26 +691,45 @@ export class UIManager {
     this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
   };
 
+  private setMessageHtml(
+    element: HTMLDivElement,
+    html: string,
+    fallbackText: string,
+  ): void {
+    try {
+      const fragment = this.sanitizeMessageHtmlToFragment(html);
+      element.replaceChildren(fragment);
+    } catch (error: any) {
+      const message = error.message || String(error);
+      Zotero.logError(
+        new Error(
+          `[Ask My Paper] Failed to render message HTML. Falling back to textContent: ${message}`,
+        ),
+      );
+      element.textContent = fallbackText || "Unable to render message.";
+    }
+  }
+
   private renderMessageDetails(
     provider?: ProviderId,
     model?: string,
     thoughts?: string[],
     citations?: LlmCitation[],
-    groundingMetadata?: any,
+    diagnostics?: LlmDiagnostics,
   ): string {
     const metadataHtml = this.renderModelMetadata(provider, model);
     const thoughtsHtml = this.renderThoughts(thoughts);
-    const sourcesHtml = this.renderSources(citations, groundingMetadata);
-    if (!metadataHtml && !thoughtsHtml && !sourcesHtml) return "";
+    const sourcesHtml = this.renderSources(citations);
+    const diagnosticsHtml = this.renderDiagnostics(diagnostics);
+    if (!metadataHtml && !thoughtsHtml && !sourcesHtml && !diagnosticsHtml) {
+      return "";
+    }
 
     const providerLabel = provider
       ? this.formatProviderLabel(provider)
       : "unknown";
     const modelLabel = model || "unknown";
-    const normalizedCitations = this.getNormalizedCitations(
-      citations,
-      groundingMetadata,
-    );
+    const normalizedCitations = this.getNormalizedCitations(citations);
     const visibleThoughts = this.getVisibleThoughts(thoughts);
     const counts = [
       visibleThoughts.length > 0 ? `Think ${visibleThoughts.length}` : "",
@@ -632,7 +740,7 @@ export class UIManager {
     const summary =
       `Details · ${providerLabel} · ${modelLabel}` +
       (counts.length > 0 ? ` · ${counts.join(" · ")}` : "");
-    return `<details class="message-details"><summary>${this.escapeHtml(summary)}</summary>${metadataHtml}${thoughtsHtml}${sourcesHtml}</details>`;
+    return `<details class="message-details"><summary>${this.escapeHtml(summary)}</summary>${metadataHtml}${diagnosticsHtml}${thoughtsHtml}${sourcesHtml}</details>`;
   }
 
   private renderModelMetadata(provider?: ProviderId, model?: string): string {
@@ -642,6 +750,45 @@ export class UIManager {
       : "unknown";
     const modelLabel = model || "unknown";
     return `<div class="message-model-metadata"><span>Provider</span><span>${this.escapeHtml(providerLabel)}</span><span>Model</span><span>${this.escapeHtml(modelLabel)}</span></div>`;
+  }
+
+  private renderDiagnostics(diagnostics?: LlmDiagnostics): string {
+    if (!diagnostics) return "";
+    const rows: string[] = [];
+    if (typeof diagnostics.pdfCitationToolCallCount === "number") {
+      rows.push(
+        `<span>PDF tools</span><span>${diagnostics.pdfCitationToolCallCount}</span>`,
+      );
+    }
+    if (typeof diagnostics.pdfCitationCount === "number") {
+      rows.push(
+        `<span>PDF citations</span><span>${diagnostics.pdfCitationCount}</span>`,
+      );
+    }
+    if (typeof diagnostics.pdfCitationDroppedCount === "number") {
+      rows.push(
+        `<span>Dropped PDF citations</span><span>${diagnostics.pdfCitationDroppedCount}</span>`,
+      );
+    }
+    if (diagnostics.citationRenderProvider || diagnostics.citationRenderModel) {
+      rows.push(
+        `<span>Citation render</span><span>${this.escapeHtml(
+          [diagnostics.citationRenderProvider, diagnostics.citationRenderModel]
+            .filter(Boolean)
+            .join(" / "),
+        )}</span>`,
+      );
+    }
+    if ((diagnostics.pdfCitationWarnings || []).length > 0) {
+      rows.push(
+        `<span>PDF citation warnings</span><span>${this.escapeHtml(
+          (diagnostics.pdfCitationWarnings || []).join(" | "),
+        )}</span>`,
+      );
+    }
+    return rows.length > 0
+      ? `<div class="message-model-metadata">${rows.join("")}</div>`
+      : "";
   }
 
   private formatProviderLabel(provider: ProviderId): string {
@@ -660,14 +807,8 @@ export class UIManager {
     return `<section class="thoughts-container"><div class="message-detail-heading">Thinking (${visibleThoughts.length})</div>${thoughtHtml}</section>`;
   }
 
-  private renderSources(
-    citations?: LlmCitation[],
-    groundingMetadata?: any,
-  ): string {
-    const normalizedCitations = this.getNormalizedCitations(
-      citations,
-      groundingMetadata,
-    );
+  private renderSources(citations?: LlmCitation[]): string {
+    const normalizedCitations = this.getNormalizedCitations(citations);
     if (normalizedCitations.length === 0) return "";
 
     const sources = normalizedCitations
@@ -680,38 +821,8 @@ export class UIManager {
     return (thoughts || []).map((thought) => thought.trim()).filter(Boolean);
   }
 
-  private getNormalizedCitations(
-    citations?: LlmCitation[],
-    groundingMetadata?: any,
-  ): LlmCitation[] {
-    return citations && citations.length > 0
-      ? citations
-      : this.getLegacyGroundingCitations(groundingMetadata);
-  }
-
-  private getLegacyGroundingCitations(groundingMetadata?: any): LlmCitation[] {
-    if (!groundingMetadata) return [];
-    if (Array.isArray(groundingMetadata.groundingChunks)) {
-      return groundingMetadata.groundingChunks
-        .map((chunk: any) =>
-          chunk?.web
-            ? {
-                title: chunk.web.title || chunk.web.uri || "Source",
-                url: chunk.web.uri,
-                provider: "gemini" as const,
-              }
-            : undefined,
-        )
-        .filter(Boolean) as LlmCitation[];
-    }
-    if (Array.isArray(groundingMetadata.retrievedReferences)) {
-      return groundingMetadata.retrievedReferences.map((ref: any) => ({
-        title: ref.title || ref.uri || "Source",
-        url: ref.uri,
-        provider: "gemini" as const,
-      }));
-    }
-    return [];
+  private getNormalizedCitations(citations?: LlmCitation[]): LlmCitation[] {
+    return citations || [];
   }
 
   private renderSourceLink(citation: LlmCitation, index: number): string {
@@ -771,7 +882,9 @@ export class UIManager {
         // Middle mouse button
         event.preventDefault();
         event.stopPropagation();
-        const detailsElements = messageElement.querySelectorAll("details");
+        const detailsElements = messageElement.querySelectorAll(
+          "details:not(.message-details)",
+        );
         let anyClosed = false;
         detailsElements.forEach((details: HTMLDetailsElement) => {
           if (!details.open) {
@@ -954,13 +1067,40 @@ export class UIManager {
       ".citation-container",
     );
     citationContainers.forEach((container: Element) => {
-      container.addEventListener("mouseenter", (event: MouseEvent) => {
+      container.addEventListener("mouseenter", async (event: MouseEvent) => {
         const originalQuote = (container as HTMLElement).dataset.originalQuote;
         if (originalQuote) {
           this.citationPopup.textContent = originalQuote;
           this.citationPopup.style.left = `${event.clientX + 10}px`; // カーソルから少しずらす
           this.citationPopup.style.top = `${event.clientY + 10}px`;
           this.citationPopup.style.display = "block";
+          return;
+        }
+
+        const locatorJson = (container as HTMLElement).dataset.citationLocator;
+        if (locatorJson) {
+          this.citationPopup.textContent = "引用原文を読み込み中...";
+          this.citationPopup.style.left = `${event.clientX + 10}px`;
+          this.citationPopup.style.top = `${event.clientY + 10}px`;
+          this.citationPopup.style.display = "block";
+          try {
+            const locator = parsePdfCitationLocator(locatorJson);
+            if (!locator) {
+              throw new Error("Invalid PDF citation locator.");
+            }
+            const recovered = await recoverPdfCitationText(locator);
+            this.citationPopup.textContent = recovered.isStale
+              ? `引用位置が古い可能性があります。\n\n${recovered.text}`
+              : recovered.text;
+          } catch (error: any) {
+            const message = error.message || String(error);
+            Zotero.logError(
+              new Error(
+                `[Ask My Paper] Failed to recover PDF citation hover text: ${message}`,
+              ),
+            );
+            this.citationPopup.textContent = `引用原文を復元できませんでした: ${message}`;
+          }
         }
       });
 

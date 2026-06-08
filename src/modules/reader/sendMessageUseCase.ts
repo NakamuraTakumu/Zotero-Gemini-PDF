@@ -27,16 +27,18 @@ export class SendMessageUseCase {
     promptText: string,
   ): Promise<ParentItemFileMetadata | null> {
     Zotero.log(
-      `[Gemini PDF] SendMessageUseCase.execute called. messageText: "${messageText}", promptText: "${promptText}"`,
+      `[Ask My Paper] SendMessageUseCase.execute called. messageText: "${messageText}", promptText: "${promptText}"`,
     );
 
     if (messageText.trim() === "") {
-      Zotero.log(`[Gemini PDF] SendMessageUseCase: messageText is empty.`);
+      Zotero.log(`[Ask My Paper] SendMessageUseCase: messageText is empty.`);
       return null;
     }
 
     if (this.deps.getIsRequestInProgress()) {
-      Zotero.debug(`[Gemini PDF] Request in progress. Skipping message send.`);
+      Zotero.debug(
+        `[Ask My Paper] Request in progress. Skipping message send.`,
+      );
       return null;
     }
 
@@ -54,7 +56,7 @@ export class SendMessageUseCase {
     const inFlightSessionKey = `${parentItem.key}:${activeSession.id}`;
     if (SendMessageUseCase.inFlightSessionKeys.has(inFlightSessionKey)) {
       Zotero.debug(
-        `[Gemini PDF] Request in progress for session ${inFlightSessionKey}. Skipping message send.`,
+        `[Ask My Paper] Request in progress for session ${inFlightSessionKey}. Skipping message send.`,
       );
       return null;
     }
@@ -70,7 +72,9 @@ export class SendMessageUseCase {
           this.deps.uiManager,
         );
       if (!parentItemFileMetadata) {
-        Zotero.log(`[Gemini PDF] SendMessageUseCase: PDF context not ensured.`);
+        Zotero.log(
+          `[Ask My Paper] SendMessageUseCase: PDF context not ensured.`,
+        );
         return null;
       }
 
@@ -89,25 +93,25 @@ export class SendMessageUseCase {
           provider,
           model,
           thoughts,
-          groundingMetadata,
           citations,
+          diagnostics,
         } = await activeSession.sendMessage(promptText, parentItemFileMetadata);
 
         this.deps.uiManager.updateBotMessage(
           botMessageDiv,
           responseText,
           thoughts,
-          groundingMetadata,
           citations,
           provider,
           model,
+          diagnostics,
         );
         await activeSession.save();
       } catch (error: any) {
         const errorMessage = error.message || String(error);
         Zotero.logError(
           new Error(
-            `[Gemini PDF] SendMessageUseCase: Error during message sending: ${errorMessage}`,
+            `[Ask My Paper] SendMessageUseCase: Error during message sending: ${errorMessage}`,
           ),
         );
         this.deps.uiManager.updateBotMessage(

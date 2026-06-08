@@ -2,10 +2,11 @@ import {
   AIMessage,
   BaseMessage,
   HumanMessage,
+  StoredMessage,
   SystemMessage,
+  ToolMessage,
 } from "@langchain/core/messages";
 import {
-  ChatMessage,
   LlmCitation,
   LlmDiagnostics,
   ParentItemFileMetadata,
@@ -21,14 +22,23 @@ import {
   getRequestPolicy,
   LangChainContentBlock,
 } from "./chatProviderAdapters";
+import {
+  createAssistantStoredMessage,
+  toLangChainMessages,
+} from "./langChainMessages";
+import {
+  createPdfCitationTools,
+  normalizePdfCitationBlocks,
+} from "../pdfCitation";
+import { renderPdfCitationDisplayText } from "./citationRenderService";
 
 export interface LlmChatResponse {
   provider: ProviderId;
   model: string;
   responseText: string;
+  storedMessage: StoredMessage;
   thoughts: string[];
   citations: LlmCitation[];
-  groundingMetadata?: any;
   diagnostics?: LlmDiagnostics;
 }
 
@@ -39,34 +49,46 @@ interface SendMessageOptions {
   policy?: Partial<LlmRequestPolicy>;
 }
 
-function toLangChainHistory(history: ChatMessage[]): BaseMessage[] {
-  return history.map((message) => {
-    const rawText = message.parts.map((part) => part.text).join("\n");
-    const text =
-      message.role === "model"
-        ? stripThoughtsFromText(rawText, message.thoughts)
-        : rawText;
-    return message.role === "user"
-      ? new HumanMessage(text)
-      : new AIMessage(text);
-  });
-}
-
 function buildMessages(
-  history: ChatMessage[],
+  history: StoredMessage[],
   text: string,
   pdfContentBlocks: LangChainContentBlock[],
+  citationContext?: string,
 ): BaseMessage[] {
   const messages: BaseMessage[] = [];
   const systemPrompt = getPref(PREF_SYSTEM_PROMPT) as string | undefined;
   if (systemPrompt) {
     messages.push(new SystemMessage(systemPrompt));
   }
-  messages.push(...toLangChainHistory(history));
+  messages.push(...toLangChainMessages(history));
 
-  const contentBlocks = [...pdfContentBlocks, { type: "text", text }];
+  const contentBlocks = [
+    ...pdfContentBlocks,
+    ...(citationContext ? [{ type: "text", text: citationContext }] : []),
+    { type: "text", text },
+  ];
   messages.push(new HumanMessage({ contentBlocks: contentBlocks as any }));
   return messages;
+}
+
+function buildCitationAttachmentContext(
+  metadata?: ParentItemFileMetadata,
+): string | undefined {
+  const files = (metadata?.files || []).filter(
+    (file) => typeof file.libraryID === "number" && file.zoteroAttachmentKey,
+  );
+  if (files.length === 0) return undefined;
+  const attachmentLines = files.map(
+    (file) =>
+      `- libraryID=${file.libraryID}, attachmentKey=${file.zoteroAttachmentKey}, fileName=${file.fileName}`,
+  );
+  return [
+    "PDF citation tool attachment IDs:",
+    ...attachmentLines,
+    "When you cite PDF evidence, first use find_pdf_text, then read_pdf_text_range if needed, and choose the smallest complete sentence, formula block, theorem/definition item, or bullet item that directly supports one claim.",
+    'Write PDF citation blocks with only locator JSON and an empty body: ::: citation {"locator":{"libraryID":1,"attachmentKey":"ATTACHMENT_KEY","start":1203,"end":1264}}\\n:::',
+    "Do not write original quotes or translated display text inside PDF citation blocks. The plugin will render the display text from the verified locator.",
+  ].join("\n");
 }
 
 function extractText(message: AIMessage): string {
@@ -229,8 +251,121 @@ function extractCitations(
   return dedupeCitations(citations);
 }
 
+async function invokeWithPdfCitationTools(
+  chatModel: any,
+  messages: BaseMessage[],
+  invokeOptions: Record<string, unknown>,
+  tools: any[],
+  nativeTools: unknown[],
+): Promise<{ response: AIMessage; localToolCallCount: number }> {
+  if (tools.length === 0 || typeof chatModel.bindTools !== "function") {
+    return {
+      response: (await chatModel.invoke(messages, invokeOptions)) as AIMessage,
+      localToolCallCount: 0,
+    };
+  }
+
+  const { tools: _ignoredTools, ...invokeOptionsWithoutTools } = invokeOptions;
+  const boundTools = [...tools, ...nativeTools];
+  const toolByName = new Map(
+    tools.map((candidate) => [candidate.name, candidate]),
+  );
+  const workingMessages = [...messages];
+  let lastResponse: AIMessage | undefined;
+  let toolCallCount = 0;
+  const maxRounds = 8;
+  const maxToolCalls = 20;
+
+  for (let round = 0; round < maxRounds; round++) {
+    const toolChoice = "auto";
+    const modelWithTools = chatModel.bindTools(boundTools, {
+      tool_choice: toolChoice,
+    });
+    lastResponse = (await modelWithTools.invoke(
+      workingMessages,
+      invokeOptionsWithoutTools,
+    )) as AIMessage;
+    const toolCalls = Array.isArray((lastResponse as any).tool_calls)
+      ? (lastResponse as any).tool_calls
+      : [];
+    Zotero.log(
+      `[Ask My Paper] PDF citation tool round: round=${round + 1}, choice=${toolChoice}, localTools=${tools.length}, nativeTools=${nativeTools.length}, returnedCalls=${toolCalls.length}`,
+    );
+    if (toolCalls.length === 0) {
+      if (toolCallCount > 0) {
+        Zotero.debug(
+          `[Ask My Paper] PDF citation tool loop completed: calls=${toolCallCount}, rounds=${round + 1}`,
+        );
+      }
+      return { response: lastResponse, localToolCallCount: toolCallCount };
+    }
+
+    workingMessages.push(lastResponse);
+    for (const toolCall of toolCalls) {
+      const toolName = String(toolCall.name || "");
+      const toolCallId =
+        typeof toolCall.id === "string"
+          ? toolCall.id
+          : `${toolName}-${round}-${toolCallCount}`;
+      const selectedTool = toolByName.get(toolName);
+      if (!selectedTool || toolCallCount >= maxToolCalls) {
+        workingMessages.push(
+          new ToolMessage({
+            content:
+              toolCallCount >= maxToolCalls
+                ? "PDF citation tool call limit reached."
+                : `Unknown PDF citation tool: ${toolName}`,
+            name: toolName,
+            tool_call_id: toolCallId,
+            status: "error",
+          }),
+        );
+        continue;
+      }
+
+      toolCallCount++;
+      try {
+        const result = await selectedTool.invoke(toolCall.args || {});
+        workingMessages.push(
+          new ToolMessage({
+            content:
+              typeof result === "string" ? result : JSON.stringify(result),
+            name: toolName,
+            tool_call_id: toolCallId,
+            status: "success",
+          }),
+        );
+      } catch (error: any) {
+        Zotero.logError(
+          new Error(
+            `[Ask My Paper] PDF citation tool failed: ${toolName}: ${error.message || String(error)}`,
+          ),
+        );
+        workingMessages.push(
+          new ToolMessage({
+            content: `PDF citation tool failed: ${error.message || String(error)}`,
+            name: toolName,
+            tool_call_id: toolCallId,
+            status: "error",
+          }),
+        );
+      }
+    }
+  }
+
+  Zotero.logError(
+    new Error("[Ask My Paper] PDF citation tool loop reached max rounds."),
+  );
+  return {
+    response:
+      lastResponse ||
+      ((await chatModel.invoke(messages, invokeOptions)) as AIMessage),
+    localToolCallCount: toolCallCount,
+  };
+}
+
 export async function sendMessageToLlm(
-  history: ChatMessage[],
+  history: StoredMessage[],
   text: string,
   options: SendMessageOptions = {},
 ): Promise<LlmChatResponse> {
@@ -242,28 +377,89 @@ export async function sendMessageToLlm(
 
   const adapter = getChatProviderAdapter(provider);
   const policy = { ...getRequestPolicy(), ...options.policy };
-  const chatModel = adapter.createModel(model, policy);
+  const citationTools = (options.metadata?.files || []).some(
+    (file) => typeof file.libraryID === "number",
+  )
+    ? createPdfCitationTools()
+    : [];
+  const effectivePolicy =
+    provider === "gemini" && citationTools.length > 0 && policy.useWebSearch
+      ? { ...policy, useWebSearch: false }
+      : policy;
+  if (effectivePolicy !== policy) {
+    Zotero.debug(
+      "[Ask My Paper] Disabled Gemini web search for this request because PDF citation custom tools are enabled.",
+    );
+  }
+  const chatModel = adapter.createModel(model, effectivePolicy);
+  Zotero.log(
+    `[Ask My Paper] PDF citation tools setup: tools=${citationTools.length}, bindTools=${typeof (chatModel as any).bindTools === "function"}, files=${options.metadata?.files?.length || 0}`,
+  );
   const messages = buildMessages(
     history,
     text,
     adapter.buildPdfContentBlocks(options.metadata),
+    buildCitationAttachmentContext(options.metadata),
   );
-  const invokeOptions = adapter.buildInvokeOptions(policy);
-  const response = (await chatModel.invoke(
+  const invokeOptions = adapter.buildInvokeOptions(effectivePolicy);
+  const nativeTools = adapter.buildNativeTools(effectivePolicy);
+  const { response, localToolCallCount } = await invokeWithPdfCitationTools(
+    chatModel,
     messages,
     invokeOptions,
-  )) as AIMessage;
+    citationTools,
+    nativeTools,
+  );
   const thoughts = extractThoughts(response);
-  const responseText = stripThoughtsFromText(extractText(response), thoughts);
+  let citationRenderProvider: string | undefined;
+  let citationRenderModel: string | undefined;
+  const normalizedCitations = await normalizePdfCitationBlocks(
+    stripThoughtsFromText(extractText(response), thoughts),
+    {
+      allowCitationBlocks: citationTools.length === 0 || localToolCallCount > 0,
+      pdfFiles: options.metadata?.files,
+      renderDisplayText: async (input) => {
+        const rendered = await renderPdfCitationDisplayText({
+          rawText: input.rawText,
+          pdfFile: input.pdfFile,
+        });
+        citationRenderProvider = rendered.provider;
+        citationRenderModel = rendered.model;
+        Zotero.log(
+          `[Ask My Paper] PDF citation rendered: provider=${rendered.provider}, model=${rendered.model}, attachment=${input.locator.attachmentKey}, start=${input.locator.start}, end=${input.locator.end}`,
+        );
+        return rendered.displayText;
+      },
+    },
+  );
+  const responseText = normalizedCitations.text;
   const citations = extractCitations(provider, response);
-  const diagnostics = adapter.buildDiagnostics(response, thoughts, policy);
-  return {
+  const diagnostics = adapter.buildDiagnostics(
+    response,
+    thoughts,
+    effectivePolicy,
+  );
+  diagnostics.pdfCitationToolCallCount = localToolCallCount;
+  diagnostics.pdfCitationCount = normalizedCitations.normalizedCount;
+  diagnostics.pdfCitationDroppedCount = normalizedCitations.droppedCount;
+  diagnostics.pdfCitationWarnings = normalizedCitations.warnings;
+  diagnostics.citationRenderProvider = citationRenderProvider;
+  diagnostics.citationRenderModel = citationRenderModel;
+  const storedMessage = createAssistantStoredMessage(response, {
     provider,
     model,
     responseText: responseText || "No response.",
     thoughts,
     citations,
-    groundingMetadata: (response.response_metadata as any)?.groundingMetadata,
+    diagnostics,
+  });
+  return {
+    provider,
+    model,
+    responseText: responseText || "No response.",
+    storedMessage,
+    thoughts,
+    citations,
     diagnostics,
   };
 }

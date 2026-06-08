@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Gemini PDF",
+  "name": "Ask My Paper",
   "version": "__buildVersion__",
-  "description": "Gemini PDF Plugin",
+  "description": "Ask My Paper Plugin",
   "homepage_url": "__homepage__",
   "author": "__author__",
   "icons": {
@@ -11,7 +11,7 @@
   },
   "applications": {
     "zotero": {
-      "id": "geminipdf@euclpts.com",
+      "id": "ask-my-paper@euclpts.com",
       "update_url": "__updateURL__",
       "strict_min_version": "6.999",
       "strict_max_version": "9.*"

@@ -1,3 +1,5 @@
+import type { StoredMessage } from "@langchain/core/messages";
+
 export type ProviderId = "gemini" | "openai" | "anthropic";
 export type ReasoningMode = "off" | "low" | "medium" | "high";
 
@@ -5,24 +7,6 @@ export type ProviderPdfUploadRef =
   | { provider: "gemini"; fileUri: string; uploadedAt: string }
   | { provider: "openai"; fileId: string; uploadedAt: string }
   | { provider: "anthropic"; fileId: string; uploadedAt: string };
-
-/**
- * Zotero親アイテムに添付されたprovider別PDF upload情報を管理するJSONのインターフェース
- */
-export interface ParentItemFileMetadata {
-  zoteroParentItemKey: string;
-  files: ParentItemFileMetadataFile[];
-}
-
-/**
- * ParentItemFileMetadata内の各ファイルの情報
- */
-export interface ParentItemFileMetadataFile {
-  zoteroAttachmentKey: string;
-  fileName: string;
-  lastModified?: number;
-  uploads: ProviderPdfUploadRef[];
-}
 
 /**
  * チャットセッション履歴のメタデータ
@@ -33,29 +17,36 @@ export interface ChatSessionHistoryMetadata {
   chatTitle: string;
   isTitleGenerated: boolean;
   createdTimestamp: string; // ISO 8601 format
+  updatedTimestamp: string; // ISO 8601 format
 }
 
 /**
  * 個々のチャットセッション履歴の全体構造
  */
 export interface ChatSessionHistory {
+  schemaVersion: 2;
   metadata: ChatSessionHistoryMetadata;
-  history: ChatMessage[];
+  messages: StoredMessage[];
 }
 
 /**
- * 会話内の個々のメッセージエントリ
+ * Zotero親アイテムに添付されたAsk My Paper用集約JSONのインターフェース
  */
-export interface ChatMessage {
-  timestamp: string; // ISO 8601 format
-  role: "user" | "model";
-  model?: string; // modelロールの場合のみ
-  provider?: ProviderId; // modelロールの場合のみ
-  parts: { text: string }[];
-  thoughts?: string[];
-  citations?: LlmCitation[];
-  groundingMetadata?: any;
-  llmDiagnostics?: LlmDiagnostics;
+export interface ParentItemFileMetadata {
+  zoteroParentItemKey: string;
+  files: ParentItemFileMetadataFile[];
+  chatSessions: ChatSessionHistory[];
+}
+
+/**
+ * ParentItemFileMetadata内の各ファイルの情報
+ */
+export interface ParentItemFileMetadataFile {
+  libraryID?: number;
+  zoteroAttachmentKey: string;
+  fileName: string;
+  lastModified?: number;
+  uploads: ProviderPdfUploadRef[];
 }
 
 export interface LlmCitation {
@@ -82,4 +73,19 @@ export interface LlmDiagnostics {
   anthropicServerToolUseCount?: number;
   anthropicWebSearchResultCount?: number;
   anthropicWebSearchRequestCount?: number;
+  pdfCitationToolCallCount?: number;
+  pdfCitationCount?: number;
+  pdfCitationDroppedCount?: number;
+  pdfCitationWarnings?: string[];
+  citationRenderProvider?: string;
+  citationRenderModel?: string;
+}
+
+export interface AskMyPaperMessageMetadata {
+  timestamp: string;
+  provider?: ProviderId;
+  model?: string;
+  thoughts?: string[];
+  citations?: LlmCitation[];
+  llmDiagnostics?: LlmDiagnostics;
 }

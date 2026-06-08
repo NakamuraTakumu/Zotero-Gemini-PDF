@@ -38,6 +38,7 @@ export interface ChatProviderAdapter {
   ): LangChainContentBlock[];
   createModel(model: string, policy: LlmRequestPolicy): InvokableChatModel;
   buildInvokeOptions(policy: LlmRequestPolicy): Record<string, unknown>;
+  buildNativeTools(policy: LlmRequestPolicy): unknown[];
   buildDiagnostics(
     response: AIMessage,
     thoughts: string[],
@@ -130,6 +131,10 @@ abstract class BaseChatProviderAdapter implements ChatProviderAdapter {
     policy: LlmRequestPolicy,
   ): Record<string, unknown>;
 
+  buildNativeTools(_policy: LlmRequestPolicy): unknown[] {
+    return [];
+  }
+
   abstract buildDiagnostics(
     response: AIMessage,
     thoughts: string[],
@@ -166,8 +171,13 @@ class GeminiChatProviderAdapter extends BaseChatProviderAdapter {
   }
 
   buildInvokeOptions(policy: LlmRequestPolicy): Record<string, unknown> {
-    if (!policy.useWebSearch) return {};
-    return { tools: [{ urlContext: {} }, { googleSearch: {} }] };
+    const tools = this.buildNativeTools(policy);
+    return tools.length > 0 ? { tools } : {};
+  }
+
+  buildNativeTools(policy: LlmRequestPolicy): unknown[] {
+    if (!policy.useWebSearch) return [];
+    return [{ urlContext: {} }, { googleSearch: {} }];
   }
 
   buildDiagnostics(
@@ -222,8 +232,13 @@ class OpenAIChatProviderAdapter extends BaseChatProviderAdapter {
   }
 
   buildInvokeOptions(policy: LlmRequestPolicy): Record<string, unknown> {
-    if (!policy.useWebSearch) return {};
-    return { tools: [openAITools.webSearch()] };
+    const tools = this.buildNativeTools(policy);
+    return tools.length > 0 ? { tools } : {};
+  }
+
+  buildNativeTools(policy: LlmRequestPolicy): unknown[] {
+    if (!policy.useWebSearch) return [];
+    return [openAITools.webSearch()];
   }
 
   buildDiagnostics(
@@ -295,8 +310,13 @@ class AnthropicChatProviderAdapter extends BaseChatProviderAdapter {
   }
 
   buildInvokeOptions(policy: LlmRequestPolicy): Record<string, unknown> {
-    if (!policy.useWebSearch) return {};
-    return { tools: [anthropicTools.webSearch_20250305({ maxUses: 5 })] };
+    const tools = this.buildNativeTools(policy);
+    return tools.length > 0 ? { tools } : {};
+  }
+
+  buildNativeTools(policy: LlmRequestPolicy): unknown[] {
+    if (!policy.useWebSearch) return [];
+    return [anthropicTools.webSearch_20250305({ maxUses: 5 })];
   }
 
   buildDiagnostics(

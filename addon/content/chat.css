@@ -61,7 +61,7 @@
   flex-shrink: 0;
   margin: 5px 0;
 }
-*|button.gemini-selection-button {
+*|button.ask-my-paper-selection-button {
   background-color: #4285f4; /* Google Blue */
   color: white;
   font-weight: bold;
@@ -70,7 +70,7 @@
   margin-inline-end: 5px; /* Give it some space */
   border: none; /* Remove default button border */
 }
-*|button.gemini-selection-button:hover {
+*|button.ask-my-paper-selection-button:hover {
   background-color: #357ae8; /* Slightly darker blue on hover */
 }
 *|div.chat-model-selector-area {
@@ -103,7 +103,7 @@
   margin-top: 6px;
   min-width: 0;
 }
-*|select.gemini-model-select {
+*|select.llm-model-select {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--chat-input-border);
@@ -240,6 +240,7 @@
   background: var(--user-message-bg);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
+  white-space: pre-wrap;
 }
 *|div.bot-message,
 *|div.model-message {
@@ -436,22 +437,7 @@
   color: var(--chat-text-color);
 }
 
-/* =================================================================
-   【最終手段】KaTeX 強制圧縮パッチ (Table & White-space Hack)
-   ================================================================= */
-
-/* 1. 数式を包んでいる Pタグ を特定し、強制的に「固定幅テーブル」として振る舞わせる */
-/* これにより「中身に合わせて広がる」挙動を物理的に無効化します */
-*|div.message p {
-  display: table !important; /* ブロックではなくテーブルとして扱う */
-  table-layout: fixed !important; /* 「中身を見ずに幅を決める」モードにする */
-  width: 100% !important; /* 親の幅に強制一致させる */
-
-  /* 【重要】チャット特有の「改行維持(pre-wrap)」をここで解除する */
-  white-space: normal !important;
-}
-
-/* 2. 数式ブロックの設定 */
+/* Keep display math contained without affecting ordinary paragraphs. */
 .katex-display {
   display: block !important;
   width: 100% !important;
@@ -466,7 +452,7 @@
   padding-bottom: 0.5em !important;
 }
 
-/* 3. KaTeX内部の要素が「超巨大な単語」として突っ張るのを防ぐ */
+/* Prevent display math internals from forcing the message wider than the pane. */
 .katex-display > .katex {
   white-space: normal !important; /* 内部的にも改行ルールをリセット */
   text-indent: 0 !important;

@@ -61,6 +61,26 @@ function isMissingUploadError(error: any): boolean {
   return message.includes("not found") || message.includes("not_found");
 }
 
+function isGeminiUnavailableUploadError(error: any): boolean {
+  const status = error?.status || error?.statusCode || error?.code;
+  if (status === 403 || status === "403") {
+    const code = String(
+      error?.error?.status || error?.statusText || error?.code || "",
+    ).toLowerCase();
+    const message = String(error?.message || error).toLowerCase();
+    if (
+      code.includes("permission_denied") ||
+      message.includes("permission denied") ||
+      message.includes("do not have permission to access the file") ||
+      message.includes("may not exist")
+    ) {
+      return true;
+    }
+  }
+
+  return isMissingUploadError(error);
+}
+
 class GeminiPdfUploadAdapter implements PdfUploadAdapter {
   readonly provider = "gemini" as const;
 
@@ -97,11 +117,11 @@ class GeminiPdfUploadAdapter implements PdfUploadAdapter {
       return true;
     } catch (error: any) {
       Zotero.debug(
-        `[Gemini PDF] Gemini uploaded PDF is unavailable: ${
+        `[Ask My Paper] Gemini uploaded PDF is unavailable: ${
           error.message || String(error)
         }`,
       );
-      if (isMissingUploadError(error)) {
+      if (isGeminiUnavailableUploadError(error)) {
         return false;
       }
       throw error;
@@ -118,7 +138,7 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
   ): Promise<ProviderPdfUploadRef> {
     try {
       Zotero.log(
-        `[Gemini PDF] OpenAI file upload started: ${displayName} (${filePath})`,
+        `[Ask My Paper] OpenAI file upload started: ${displayName} (${filePath})`,
       );
       const client = getOpenAIClient();
       const bytes = readBinaryFile(filePath);
@@ -127,7 +147,7 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
         purpose: "user_data",
       });
       Zotero.log(
-        `[Gemini PDF] OpenAI file upload succeeded: ${displayName} (${uploadedFile.id})`,
+        `[Ask My Paper] OpenAI file upload succeeded: ${displayName} (${uploadedFile.id})`,
       );
       return {
         provider: "openai",
@@ -137,11 +157,11 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
     } catch (error: any) {
       const errorMessage = error.message || String(error);
       Zotero.log(
-        `[Gemini PDF] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
+        `[Ask My Paper] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
       );
       Zotero.logError(
         new Error(
-          `[Gemini PDF] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
+          `[Ask My Paper] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
         ),
       );
       throw error;
@@ -155,7 +175,7 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
       return true;
     } catch (error: any) {
       Zotero.debug(
-        `[Gemini PDF] OpenAI uploaded PDF is unavailable: ${
+        `[Ask My Paper] OpenAI uploaded PDF is unavailable: ${
           error.message || String(error)
         }`,
       );
@@ -227,7 +247,7 @@ class AnthropicPdfUploadAdapter implements PdfUploadAdapter {
       throw new Error(await formatHttpError("Anthropic file lookup", response));
     } catch (error: any) {
       Zotero.debug(
-        `[Gemini PDF] Anthropic uploaded PDF is unavailable: ${
+        `[Ask My Paper] Anthropic uploaded PDF is unavailable: ${
           error.message || String(error)
         }`,
       );

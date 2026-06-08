@@ -1,48 +1,115 @@
 import { ChatSessionHistory } from "../../types/chat";
 import {
-  GEMINI_CHAT_FILENAME_PREFIX,
-  GEMINI_CHAT_TITLE_PREFIX,
+  CHAT_ATTACHMENT_TITLE_PREFIX,
+  PREVIOUS_CHAT_ATTACHMENT_TITLE_PREFIX,
 } from "../../utils/constants";
+import { ParentItemDataRepository } from "./parentItemDataRepository";
 
 export interface StoredChatSession {
   history: ChatSessionHistory;
-  attachment: Zotero.Item;
 }
 
 export class ChatSessionRepository {
+  private parentItemDataRepository = new ParentItemDataRepository();
+
   async loadSessions(parentItem: Zotero.Item): Promise<StoredChatSession[]> {
+    const parentData = await this.parentItemDataRepository.load(parentItem);
+    const migratedSessions =
+      await this.loadAndDeletePerSessionAttachments(parentItem);
+
+    const chatSessions = parentData.chatSessions;
+    let changed = false;
+
+    for (const migratedSession of migratedSessions) {
+      const existingSessionIndex = chatSessions.findIndex(
+        (session) =>
+          session.metadata.chatId === migratedSession.metadata.chatId,
+      );
+      if (existingSessionIndex >= 0) {
+        chatSessions[existingSessionIndex] = migratedSession;
+      } else {
+        chatSessions.push(migratedSession);
+      }
+      changed = true;
+    }
+
+    if (changed) {
+      parentData.chatSessions = chatSessions;
+      await this.parentItemDataRepository.save(parentItem, parentData);
+    }
+
+    Zotero.log(
+      `[ChatSessionRepository] Loaded ${chatSessions.length} sessions for parent item ${parentItem.key}.`,
+    );
+    return chatSessions.map((history) => ({ history }));
+  }
+
+  async saveSession(
+    parentItem: Zotero.Item,
+    history: ChatSessionHistory,
+  ): Promise<void> {
+    const parentData = await this.parentItemDataRepository.load(parentItem);
+    const sessionIndex = parentData.chatSessions.findIndex(
+      (session) => session.metadata.chatId === history.metadata.chatId,
+    );
+    if (sessionIndex >= 0) {
+      parentData.chatSessions[sessionIndex] = history;
+    } else {
+      parentData.chatSessions.push(history);
+    }
+    await this.parentItemDataRepository.save(parentItem, parentData);
+  }
+
+  async deleteSession(parentItem: Zotero.Item, chatId: string): Promise<void> {
+    const parentData = await this.parentItemDataRepository.load(parentItem);
+    const initialLength = parentData.chatSessions.length;
+    parentData.chatSessions = parentData.chatSessions.filter(
+      (session) => session.metadata.chatId !== chatId,
+    );
+
+    if (parentData.chatSessions.length !== initialLength) {
+      await this.parentItemDataRepository.save(parentItem, parentData);
+    }
+    Zotero.debug(
+      `[ChatSessionRepository] Deleted chat session from parent store: ${chatId}`,
+    );
+  }
+
+  private async loadAndDeletePerSessionAttachments(
+    parentItem: Zotero.Item,
+  ): Promise<ChatSessionHistory[]> {
     const childAttachments = await Zotero.Items.get(
       parentItem.getAttachments(),
     );
-    Zotero.log(
-      `[ChatSessionRepository] Processing attachments for parent item ${parentItem.key}. Found ${childAttachments.length} attachments.`,
-    );
+    const sessions: ChatSessionHistory[] = [];
 
-    const sessions: StoredChatSession[] = [];
     for (const attachment of childAttachments) {
-      if (!this.isChatAttachment(attachment)) {
-        continue;
-      }
-
-      const conversationFilePath = attachment.getFilePath();
-      if (!conversationFilePath) {
+      if (!this.isPerSessionChatAttachment(attachment)) {
         continue;
       }
 
       try {
-        const content =
-          await Zotero.File.getContentsAsync(conversationFilePath);
-        if (typeof content === "string" && content.trim() !== "") {
-          const history = JSON.parse(content) as ChatSessionHistory;
-          sessions.push({ history, attachment });
-          Zotero.log(
-            `[ChatSessionRepository] Loaded session with ID: ${history.metadata.chatId}, Title: "${history.metadata.chatTitle}"`,
-          );
+        const conversationFilePath = attachment.getFilePath();
+        if (conversationFilePath) {
+          const content =
+            await Zotero.File.getContentsAsync(conversationFilePath);
+          if (typeof content === "string" && content.trim() !== "") {
+            const history = this.parseSessionHistory(content, attachment.key);
+            if (history) {
+              sessions.push(history);
+            }
+          }
         }
+
+        attachment.deleted = true;
+        await attachment.saveTx();
+        Zotero.debug(
+          `[ChatSessionRepository] Migrated and deleted per-session chat attachment ${attachment.key}.`,
+        );
       } catch (e: any) {
         Zotero.logError(
           new Error(
-            `[ChatSessionRepository] Failed to parse conversation JSON from attachment ${attachment.key} (Path: ${conversationFilePath}): ${
+            `[ChatSessionRepository] Failed to migrate conversation attachment ${attachment.key}: ${
               e.message || String(e)
             }`,
           ),
@@ -53,198 +120,30 @@ export class ChatSessionRepository {
     return sessions;
   }
 
-  async getOrCreateAttachment(
-    parentItem: Zotero.Item,
-    history: ChatSessionHistory,
-  ): Promise<Zotero.Item> {
-    const existingAttachment = await this.findAttachmentByChatId(
-      parentItem,
-      history.metadata.chatId,
-    );
-    if (existingAttachment) {
-      return existingAttachment;
-    }
-
-    return this.createAttachment(parentItem, history);
-  }
-
-  async saveSession(
-    attachment: Zotero.Item,
-    history: ChatSessionHistory,
-  ): Promise<void> {
-    const conversationFilePath = attachment.getFilePath();
-    if (!conversationFilePath) {
-      Zotero.logError(
-        new Error(
-          `[ChatSessionRepository] Could not get file path for conversation attachment ${attachment.key}.`,
-        ),
-      );
-      return;
-    }
-
-    try {
-      await Zotero.File.putContentsAsync(
-        conversationFilePath,
-        JSON.stringify(history, null, 2),
-      );
-    } catch (e: any) {
-      Zotero.log(
-        `Error writing to conversation file: ${e.message || String(e)}`,
-      );
-    }
-  }
-
-  async deleteSession(attachment: Zotero.Item, chatId: string): Promise<void> {
-    try {
-      attachment.deleted = true;
-      await attachment.saveTx();
-      Zotero.debug(
-        `[ChatSessionRepository] Deleted conversation attachment for chatId: ${chatId}`,
-      );
-    } catch (e: any) {
-      Zotero.logError(
-        new Error(
-          `[ChatSessionRepository] Error deleting conversation attachment ${attachment.key}: ${
-            e.message || String(e)
-          }`,
-        ),
-      );
-      throw e;
-    }
-  }
-
-  async updateAttachmentTitle(
-    attachment: Zotero.Item,
-    sessionTitle: string,
-  ): Promise<void> {
-    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${sessionTitle}`;
-    if (attachment.getField("title") !== newAttachmentTitle) {
-      attachment.setField("title", newAttachmentTitle);
-      await attachment.saveTx();
-      Zotero.debug(
-        `[ChatSessionRepository] Attachment title updated to "${newAttachmentTitle}"`,
-      );
-    }
-  }
-
-  private async findAttachmentByChatId(
-    parentItem: Zotero.Item,
-    chatId: string,
-  ): Promise<Zotero.Item | undefined> {
-    const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments(),
-    );
-    Zotero.log(
-      `[ChatSessionRepository] Looking for chatId ${chatId} in ${childAttachments.length} attachments for parent item ${parentItem.key}.`,
-    );
-
-    for (const attachment of childAttachments) {
-      if (!this.isChatAttachment(attachment)) {
-        continue;
-      }
-
-      const conversationFilePath = attachment.getFilePath();
-      if (!conversationFilePath) {
-        continue;
-      }
-
-      try {
-        const content =
-          await Zotero.File.getContentsAsync(conversationFilePath);
-        if (typeof content !== "string" || content.trim() === "") {
-          continue;
-        }
-        const parsedHistory = JSON.parse(content) as ChatSessionHistory;
-        if (parsedHistory.metadata.chatId === chatId) {
-          Zotero.log(
-            `[ChatSessionRepository] Found matching chat attachment by chatId: ${attachment.key}`,
-          );
-          return attachment;
-        }
-      } catch (e: any) {
-        Zotero.logError(
-          new Error(
-            `[ChatSessionRepository] Error parsing attachment ${attachment.key} content: ${
-              e.message || String(e)
-            }`,
-          ),
-        );
-      }
-    }
-
-    return undefined;
-  }
-
-  private async createAttachment(
-    parentItem: Zotero.Item,
-    history: ChatSessionHistory,
-  ): Promise<Zotero.Item> {
-    const chatId = history.metadata.chatId;
-    const newAttachmentTitle = `${GEMINI_CHAT_TITLE_PREFIX}${chatId}`;
-    const filename = `${GEMINI_CHAT_FILENAME_PREFIX}${chatId}.json`;
-    const tempDir = Zotero.getTempDirectory();
-    const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
-    tempDir.append(tempFileName);
-    const tempFilePath = tempDir.path;
-
-    try {
-      await Zotero.File.putContentsAsync(
-        tempFilePath,
-        JSON.stringify(history, null, 2),
-      );
-      const tempFile = Zotero.File.pathToFile(tempFilePath);
-
-      const newAttachment = await Zotero.Attachments.importFromFile({
-        file: tempFile,
-        parentItemID: parentItem.id,
-        contentType: "application/json",
-        title: newAttachmentTitle,
-        saveOptions: {
-          // Prevent selection change that can disrupt the active PDF reader tab.
-          skipSelect: true,
-        },
-      });
-
-      Zotero.debug(
-        `[ChatSessionRepository] Created conversation attachment with key ${newAttachment.key}`,
-      );
-      return newAttachment;
-    } catch (e: any) {
-      Zotero.logError(
-        new Error(
-          `[ChatSessionRepository] Error creating attachment from temp file: ${
-            e.message || String(e)
-          }`,
-        ),
-      );
-      throw e;
-    } finally {
-      try {
-        const tempFile = Zotero.File.pathToFile(tempFilePath);
-        if (tempFile.exists()) {
-          tempFile.remove(false);
-          Zotero.debug(`Temporary file removed: ${tempFilePath}`);
-        }
-      } catch (cleanupError: any) {
-        Zotero.logError(
-          new Error(
-            `Failed to clean up temporary file ${tempFilePath}: ${
-              cleanupError.message || String(cleanupError)
-            }`,
-          ),
-        );
-      }
-    }
-  }
-
-  private isChatAttachment(attachment: Zotero.Item): boolean {
+  private isPerSessionChatAttachment(attachment: Zotero.Item): boolean {
+    const title = attachment.getField("title") || "";
+    const hasChatSessionTitle =
+      title.startsWith(CHAT_ATTACHMENT_TITLE_PREFIX) ||
+      title.startsWith(PREVIOUS_CHAT_ATTACHMENT_TITLE_PREFIX);
     return (
       (attachment.itemType as string) === "attachment" &&
-      Boolean(
-        attachment.getField("title")?.startsWith(GEMINI_CHAT_TITLE_PREFIX),
-      ) &&
+      hasChatSessionTitle &&
       attachment.attachmentLinkMode ===
         Zotero.Attachments.LINK_MODE_IMPORTED_FILE
     );
+  }
+
+  private parseSessionHistory(
+    content: string,
+    attachmentKey: string,
+  ): ChatSessionHistory | undefined {
+    const parsed = JSON.parse(content) as Partial<ChatSessionHistory>;
+    if (parsed.schemaVersion !== 2 || !Array.isArray(parsed.messages)) {
+      Zotero.debug(
+        `[ChatSessionRepository] Ignoring incompatible chat attachment ${attachmentKey}; expected schemaVersion=2 and messages[].`,
+      );
+      return undefined;
+    }
+    return parsed as ChatSessionHistory;
   }
 }

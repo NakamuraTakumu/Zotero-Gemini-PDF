@@ -1,6 +1,5 @@
 import {
   ChatSessionHistory,
-  ChatMessage,
   LlmCitation,
   LlmDiagnostics,
   ParentItemFileMetadata,
@@ -15,6 +14,7 @@ import { getString } from "../../utils/locale";
 import GlobalChatManager from "../globalChatManager"; // Add this import
 import { ChatSessionRepository } from "./chatSessionRepository";
 import { TitleGenerationService } from "./titleGenerationService";
+import { createUserStoredMessage } from "../llm/langChainMessages";
 
 /**
  * Represents a single chat session, encapsulating its history and operations.
@@ -24,8 +24,7 @@ import { TitleGenerationService } from "./titleGenerationService";
 export class ChatSession {
   private _history: ChatSessionHistory;
   private _parentItem: Zotero.Item;
-  private _attachment!: Zotero.Item; // Initialized in init()
-  private globalChatManager: GlobalChatManager; // Add this line
+  private globalChatManager: GlobalChatManager;
   private repository: ChatSessionRepository;
   private titleGenerationService = new TitleGenerationService();
   private titleGenerationPromise: Promise<boolean> | null = null;
@@ -33,23 +32,26 @@ export class ChatSession {
   /**
    * Creates a new ChatSession instance for a new chat.
    * @param parentItem The Zotero parent item.
-   * @param globalChatManager The global chat manager instance. // Add this param
+   * @param globalChatManager The global chat manager instance.
    * @returns A new ChatSession instance.
    */
   public static createNew(
     parentItem: Zotero.Item,
-    globalChatManager: GlobalChatManager, // Add this param
+    globalChatManager: GlobalChatManager,
     repository: ChatSessionRepository,
   ): ChatSession {
+    const now = new Date().toISOString();
     const newHistory: ChatSessionHistory = {
+      schemaVersion: 2,
       metadata: {
         zoteroParentItemKey: parentItem.key,
         chatId: uuidv4(),
-        chatTitle: getString("gemini-pdf-reader-new-chat-title"),
+        chatTitle: getString("askmypaper-reader-new-chat-title"),
         isTitleGenerated: false,
-        createdTimestamp: new Date().toISOString(), // 新しいフィールドを初期化
+        createdTimestamp: now,
+        updatedTimestamp: now,
       },
-      history: [],
+      messages: [],
     };
     return new ChatSession(
       newHistory,
@@ -62,28 +64,13 @@ export class ChatSession {
   constructor(
     history: ChatSessionHistory,
     parentItem: Zotero.Item,
-    globalChatManager: GlobalChatManager, // Add this param
+    globalChatManager: GlobalChatManager,
     repository: ChatSessionRepository,
-    attachment?: Zotero.Item,
   ) {
     this._history = history;
     this._parentItem = parentItem;
-    this.globalChatManager = globalChatManager; // Add this line
+    this.globalChatManager = globalChatManager;
     this.repository = repository;
-    if (attachment) {
-      this._attachment = attachment;
-    }
-  }
-
-  /**
-   * Initializes the ChatSession by ensuring its Zotero attachment exists.
-   * This should be called immediately after construction.
-   */
-  public async init(): Promise<void> {
-    this._attachment = await this.repository.getOrCreateAttachment(
-      this._parentItem,
-      this._history,
-    );
   }
 
   public get history(): Readonly<ChatSessionHistory> {
@@ -102,49 +89,27 @@ export class ChatSession {
     if (this._history.metadata.chatTitle !== newTitle) {
       this._history.metadata.chatTitle = newTitle;
       this._history.metadata.isTitleGenerated = true;
+      this.touch();
     }
   }
 
-  /**
-   * Updates the attachment's title based on the current session title and saves it.
-   */
-  private async _updateAttachmentTitle(): Promise<void> {
-    if (!this._attachment) {
-      Zotero.logError(
-        new Error(
-          "ChatSession attachment not initialized. Cannot update attachment title.",
-        ),
-      );
-      return;
-    }
-    await this.repository.updateAttachmentTitle(this._attachment, this.title);
+  private touch(): void {
+    this._history.metadata.updatedTimestamp = new Date().toISOString();
   }
 
   /**
    * Saves the current session history to the persistence layer.
    */
   public async save(): Promise<void> {
-    if (!this._attachment) {
-      Zotero.logError(
-        new Error("ChatSession attachment not initialized. Call init() first."),
-      );
-      return;
-    }
-    await this.repository.saveSession(this._attachment, this._history);
+    this.touch();
+    await this.repository.saveSession(this._parentItem, this._history);
   }
 
   /**
-   * Deletes the chat session's attachment from Zotero.
+   * Deletes the chat session from the aggregate parent item store.
    */
   public async delete(): Promise<void> {
-    if (!this._attachment) {
-      Zotero.logError(
-        new Error("ChatSession attachment not initialized. Cannot delete."),
-      );
-      return;
-    }
-
-    await this.repository.deleteSession(this._attachment, this.id);
+    await this.repository.deleteSession(this._parentItem, this.id);
   }
 
   /**
@@ -152,41 +117,18 @@ export class ChatSession {
    * @param text The text of the user's message.
    */
   public addUserMessage(text: string): void {
-    const userMessage: ChatMessage = {
-      timestamp: new Date().toISOString(),
-      role: "user",
-      parts: [{ text: text }],
-    };
-    this._history.history.push(userMessage);
+    this._history.messages.push(createUserStoredMessage(text));
+    this.touch();
   }
 
   /**
    * Adds a model's message to the session's history.
-   * @param text The text of the model's response.
-   * @param model The model that generated the response.
-   * @param groundingMetadata Optional grounding metadata from the API.
    */
   public addBotMessage(
-    text: string,
-    model: string,
-    provider: ProviderId,
-    thoughts?: string[],
-    groundingMetadata?: any,
-    citations?: LlmCitation[],
-    diagnostics?: LlmDiagnostics,
+    storedMessage: ChatSessionHistory["messages"][number],
   ): void {
-    const botMessage: ChatMessage = {
-      timestamp: new Date().toISOString(),
-      role: "model",
-      model: model,
-      provider,
-      parts: [{ text: text || "" }],
-      thoughts: thoughts,
-      citations,
-      groundingMetadata: groundingMetadata,
-      llmDiagnostics: diagnostics,
-    };
-    this._history.history.push(botMessage);
+    this._history.messages.push(storedMessage);
+    this.touch();
   }
 
   /**
@@ -195,7 +137,7 @@ export class ChatSession {
    */
   public async generateTitle(): Promise<boolean> {
     if (
-      this._history.history.length < 2 ||
+      this._history.messages.length < 2 ||
       this._history.metadata.isTitleGenerated
     ) {
       return false;
@@ -217,11 +159,10 @@ export class ChatSession {
     try {
       const generatedTitle =
         await this.titleGenerationService.generateInitialTitle(
-          this._history.history,
+          this._history.messages,
         );
       if (generatedTitle) {
         this.title = generatedTitle;
-        await this._updateAttachmentTitle();
         await this.globalChatManager.saveSession(this);
         return true;
       }
@@ -243,18 +184,17 @@ export class ChatSession {
    * The number of messages used is controlled by PREF_CONTEXT_WINDOW_SIZE.
    */
   public async regenerateTitleFromTopHistory(): Promise<boolean> {
-    if (this._history.history.length === 0) {
+    if (this._history.messages.length === 0) {
       return false;
     }
 
     try {
       const generatedTitle =
         await this.titleGenerationService.regenerateTitleFromTopHistory(
-          this._history.history,
+          this._history.messages,
         );
       if (generatedTitle) {
         this.title = generatedTitle;
-        await this._updateAttachmentTitle();
         await this.globalChatManager.saveSession(this);
         return true;
       }
@@ -285,15 +225,14 @@ export class ChatSession {
     provider: ProviderId;
     model: string;
     thoughts?: string[];
-    groundingMetadata?: any;
     citations?: LlmCitation[];
     diagnostics?: LlmDiagnostics;
   }> {
     const historyLimit = (getPref(PREF_CONTEXT_WINDOW_SIZE) as number) || 32;
 
     const historyForApi =
-      this._history.history.length > 1
-        ? this._history.history.slice(0, -1)
+      this._history.messages.length > 1
+        ? this._history.messages.slice(0, -1)
         : [];
     const truncatedHistory =
       historyLimit > 0 ? historyForApi.slice(-historyLimit) : historyForApi;
@@ -303,32 +242,24 @@ export class ChatSession {
       const {
         thoughts,
         responseText,
-        groundingMetadata,
         citations,
         provider: responseProvider,
         model,
         diagnostics,
+        storedMessage,
       } = await sendMessageToLlm(truncatedHistory, textForApi, {
         provider,
         metadata: parentItemFileMetadata,
       });
       Zotero.log(
-        `[Gemini PDF] LLM response metadata: provider=${responseProvider}, model=${model}, thoughts=${thoughts.length}, citations=${citations.length}`,
+        `[Ask My Paper] LLM response metadata: provider=${responseProvider}, model=${model}, thoughts=${thoughts.length}, citations=${citations.length}`,
       );
 
-      this.addBotMessage(
-        responseText || "",
-        model,
-        responseProvider,
-        thoughts,
-        groundingMetadata,
-        citations,
-        diagnostics,
-      );
+      this.addBotMessage(storedMessage);
 
       // After the first exchange, generate a title for the session
       if (
-        this._history.history.length === 2 &&
+        this._history.messages.length === 2 &&
         !this._history.metadata.isTitleGenerated
       ) {
         // Don't wait for this to complete
@@ -340,7 +271,6 @@ export class ChatSession {
         provider: responseProvider,
         model,
         thoughts,
-        groundingMetadata,
         citations,
         diagnostics,
       };

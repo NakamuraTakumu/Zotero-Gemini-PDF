@@ -65,7 +65,7 @@ function _getString(
   localeString: FluentMessageId,
   options: { branch?: string | undefined; args?: Record<string, unknown> } = {},
 ): string {
-  const localStringWithPrefix = `${config.addonRef}-${localeString}`;
+  const localStringWithPrefix = getPrefixedLocaleID(localeString);
   const { branch, args } = options;
   const pattern = addon.data.locale?.current.formatMessagesSync([
     { id: localStringWithPrefix, args },
@@ -86,5 +86,10 @@ function _getString(
 }
 
 function getLocaleID(id: FluentMessageId) {
-  return `${config.addonRef}-${id}`;
+  return getPrefixedLocaleID(id);
+}
+
+function getPrefixedLocaleID(id: FluentMessageId): string {
+  const prefix = `${config.addonRef}-`;
+  return id.startsWith(prefix) ? id : `${prefix}${id}`;
 }

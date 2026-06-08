@@ -1,10 +1,7 @@
-// gemini-pdf/src/modules/reader/pdfSyncManager.ts
-
 import {
-  PARENT_ITEM_FILE_METADATA_FILENAME_PREFIX,
-  PARENT_ITEM_FILE_METADATA_TITLE_PREFIX,
-} from "../../utils/constants";
-import { getSelectedProvider } from "../llm/provider";
+  getCitationRenderProvider,
+  getSelectedProvider,
+} from "../llm/provider";
 import { getPdfUploadAdapter } from "../llm/pdfUploadAdapters";
 import { UIManager } from "./ui";
 import {
@@ -12,6 +9,7 @@ import {
   ParentItemFileMetadataFile,
   ProviderId,
 } from "../../types/chat";
+import { ParentItemDataRepository } from "./parentItemDataRepository";
 
 /**
  * Manages the synchronization of PDF files with the selected provider's file API,
@@ -24,6 +22,7 @@ export class PdfFileSyncManager {
   >();
   private parentItemFileMetadata: ParentItemFileMetadata | null = null;
   private provider: ProviderId | null = null;
+  private parentItemDataRepository = new ParentItemDataRepository();
 
   constructor() {}
 
@@ -45,22 +44,17 @@ export class PdfFileSyncManager {
 
     try {
       this.provider = getSelectedProvider();
-      const syncKey = `${parentItem.key}:${this.provider}`;
-      let syncPromise = PdfFileSyncManager.inFlightSyncs.get(syncKey);
-      if (!syncPromise) {
-        syncPromise = this._synchronizePdfAttachments(
+      const renderProvider = getCitationRenderProvider();
+      const providers = Array.from(new Set([this.provider, renderProvider]));
+      let metadata: ParentItemFileMetadata | null = null;
+      for (const provider of providers) {
+        metadata = await this.synchronizeProvider(
           parentItem,
           uiManager,
-          this.provider,
-        ).finally(() => {
-          PdfFileSyncManager.inFlightSyncs.delete(syncKey);
-        });
-        PdfFileSyncManager.inFlightSyncs.set(syncKey, syncPromise);
-      } else {
-        Zotero.debug(`[Gemini PDF] Reusing in-flight PDF sync for ${syncKey}.`);
+          provider,
+        );
       }
-
-      this.parentItemFileMetadata = await syncPromise;
+      this.parentItemFileMetadata = metadata;
       return this.parentItemFileMetadata;
     } catch (e: any) {
       const errorMessage = e.message || String(e);
@@ -71,6 +65,28 @@ export class PdfFileSyncManager {
       );
       return null;
     }
+  }
+
+  private async synchronizeProvider(
+    parentItem: Zotero.Item,
+    uiManager: UIManager,
+    provider: ProviderId,
+  ): Promise<ParentItemFileMetadata> {
+    const syncKey = `${parentItem.key}:${provider}`;
+    let syncPromise = PdfFileSyncManager.inFlightSyncs.get(syncKey);
+    if (!syncPromise) {
+      syncPromise = this._synchronizePdfAttachments(
+        parentItem,
+        uiManager,
+        provider,
+      ).finally(() => {
+        PdfFileSyncManager.inFlightSyncs.delete(syncKey);
+      });
+      PdfFileSyncManager.inFlightSyncs.set(syncKey, syncPromise);
+    } else {
+      Zotero.debug(`[Ask My Paper] Reusing in-flight PDF sync for ${syncKey}.`);
+    }
+    return syncPromise;
   }
 
   /**
@@ -121,6 +137,7 @@ export class PdfFileSyncManager {
       let targetFileInfo = fileInfo;
       if (!targetFileInfo) {
         targetFileInfo = {
+          libraryID: pdf.libraryID,
           zoteroAttachmentKey: pdfKey,
           fileName: pdfTitle,
           lastModified,
@@ -129,6 +146,7 @@ export class PdfFileSyncManager {
         metadata.files.push(targetFileInfo);
         updated = true;
       } else {
+        targetFileInfo.libraryID = targetFileInfo.libraryID || pdf.libraryID;
         targetFileInfo.fileName = targetFileInfo.fileName || pdfTitle;
         targetFileInfo.lastModified = lastModified;
         targetFileInfo.uploads = Array.isArray(targetFileInfo.uploads)
@@ -165,7 +183,7 @@ export class PdfFileSyncManager {
       if (needsUpload) {
         try {
           Zotero.log(
-            `[Gemini PDF] Uploading PDF to ${provider}: ${pdfTitle} (${pdfPath})`,
+            `[Ask My Paper] Uploading PDF to ${provider}: ${pdfTitle} (${pdfPath})`,
           );
           ui.updateBotMessage(
             statusMessageDiv,
@@ -183,7 +201,7 @@ export class PdfFileSyncManager {
         } catch (uploadError: any) {
           const uploadErrorMessage = uploadError.message || String(uploadError);
           Zotero.log(
-            `[Gemini PDF] Failed to upload PDF to ${provider}: ${pdfTitle}: ${uploadErrorMessage}`,
+            `[Ask My Paper] Failed to upload PDF to ${provider}: ${pdfTitle}: ${uploadErrorMessage}`,
           );
           Zotero.logError(
             new Error(
@@ -225,59 +243,7 @@ export class PdfFileSyncManager {
   private async _loadParentItemFileMetadata(
     parentItem: Zotero.Item,
   ): Promise<ParentItemFileMetadata> {
-    const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments(),
-    );
-    const attachmentTitle = `${PARENT_ITEM_FILE_METADATA_TITLE_PREFIX}${parentItem.key}`;
-    const existingAttachment = childAttachments.find((att) => {
-      const currentAttachmentTitle = att.getField("title");
-      return (
-        att.isAttachment() &&
-        (currentAttachmentTitle === attachmentTitle ||
-          currentAttachmentTitle === `${attachmentTitle}.json`)
-      );
-    });
-
-    if (existingAttachment) {
-      const metadataFilePath = existingAttachment.getFilePath();
-      if (metadataFilePath) {
-        const content = await Zotero.File.getContentsAsync(metadataFilePath);
-        if (typeof content === "string" && content.trim() !== "") {
-          try {
-            return this._normalizeMetadata(
-              JSON.parse(content) as ParentItemFileMetadata,
-            );
-          } catch (e: any) {
-            Zotero.logError(
-              new Error(
-                `Failed to parse ParentItemFileMetadata JSON: ${
-                  e.message || String(e)
-                }`,
-              ),
-            );
-          }
-        }
-      }
-    }
-
-    return {
-      zoteroParentItemKey: parentItem.key,
-      files: [],
-    };
-  }
-
-  private _normalizeMetadata(
-    metadata: ParentItemFileMetadata,
-  ): ParentItemFileMetadata {
-    return {
-      zoteroParentItemKey: metadata.zoteroParentItemKey,
-      files: (metadata.files || []).map((file) => ({
-        zoteroAttachmentKey: file.zoteroAttachmentKey,
-        fileName: file.fileName,
-        lastModified: file.lastModified,
-        uploads: Array.isArray(file.uploads) ? file.uploads : [],
-      })),
-    };
+    return this.parentItemDataRepository.load(parentItem);
   }
 
   /**
@@ -294,114 +260,13 @@ export class PdfFileSyncManager {
       return;
     }
 
-    const metadataAttachment =
-      await this._getOrCreateParentItemFileMetadataAttachment(parentItem);
-    const metadataFilePath = metadataAttachment.getFilePath();
-
-    if (metadataFilePath) {
-      const newContent = JSON.stringify(metadata, null, 2);
-      try {
-        await Zotero.File.putContentsAsync(metadataFilePath, newContent);
-      } catch (e: any) {
-        Zotero.debug(
-          `Error writing to ParentItemFileMetadata file: ${
-            e.message || String(e)
-          }`,
-        );
-        throw e;
-      }
-    } else {
-      throw new Error("Could not get file path for ParentItemFileMetadata.");
-    }
-  }
-
-  /**
-   * Finds an existing ParentItemFileMetadata attachment or creates a new one if it doesn't exist.
-   */
-  private async _getOrCreateParentItemFileMetadataAttachment(
-    parentItem: Zotero.Item,
-  ): Promise<Zotero.Item> {
-    const childAttachments = await Zotero.Items.get(
-      parentItem.getAttachments(),
-    );
-    const attachmentTitle = `${PARENT_ITEM_FILE_METADATA_TITLE_PREFIX}${parentItem.key}`;
-
-    for (const attachment of childAttachments) {
-      const currentAttachmentTitle = attachment.getField("title");
-      if (
-        (attachment.itemType as string) === "attachment" &&
-        (currentAttachmentTitle === attachmentTitle ||
-          currentAttachmentTitle === `${attachmentTitle}.json`) &&
-        attachment.attachmentLinkMode ===
-          Zotero.Attachments.LINK_MODE_IMPORTED_FILE
-      ) {
-        Zotero.debug(
-          `Found existing ParentItemFileMetadata attachment for ${parentItem.key}.`,
-        );
-        return attachment;
-      }
-    }
-
-    Zotero.debug(
-      `Creating new ParentItemFileMetadata attachment for ${parentItem.key}.`,
-    );
-
-    const initialMetadata: ParentItemFileMetadata = {
-      zoteroParentItemKey: parentItem.key,
-      files: [],
-    };
-    const metadataJsonString = JSON.stringify(initialMetadata, null, 2);
-    const filename = `${PARENT_ITEM_FILE_METADATA_FILENAME_PREFIX}${parentItem.key}.json`;
-
-    const tempDir = Zotero.getTempDirectory();
-    const tempFileName = `${Zotero.Utilities.randomString()}-${filename}`;
-    tempDir.append(tempFileName);
-    const tempFilePath = tempDir.path;
-
     try {
-      await Zotero.File.putContentsAsync(tempFilePath, metadataJsonString);
-      const tempFile = Zotero.File.pathToFile(tempFilePath);
-
-      const newAttachment = await Zotero.Attachments.importFromFile({
-        file: tempFile,
-        parentItemID: parentItem.id,
-        contentType: "application/json",
-        title: attachmentTitle,
-        saveOptions: {
-          // Keep current item selection to avoid closing or switching the reader tab.
-          skipSelect: true,
-        },
-      });
-
-      Zotero.debug(
-        `Successfully created new ParentItemFileMetadata attachment with key ${newAttachment.key}`,
-      );
-      return newAttachment;
+      await this.parentItemDataRepository.save(parentItem, metadata);
     } catch (e: any) {
-      Zotero.logError(
-        new Error(
-          `Error creating ParentItemFileMetadata attachment from temp file: ${
-            e.message || String(e)
-          }`,
-        ),
+      Zotero.debug(
+        `Error writing to ParentItemFileMetadata file: ${e.message || String(e)}`,
       );
       throw e;
-    } finally {
-      try {
-        const tempFile = Zotero.File.pathToFile(tempFilePath);
-        if (tempFile.exists()) {
-          tempFile.remove(false);
-          Zotero.debug(`Temporary file removed: ${tempFilePath}`);
-        }
-      } catch (cleanupError: any) {
-        Zotero.logError(
-          new Error(
-            `Failed to clean up temporary file ${tempFilePath}: ${
-              cleanupError.message || String(cleanupError)
-            }`,
-          ),
-        );
-      }
     }
   }
 }

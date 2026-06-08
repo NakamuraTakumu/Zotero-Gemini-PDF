@@ -9,7 +9,7 @@
   <vbox flex="1">
     <groupbox>
       <label
-        ><html:h2 data-l10n-id="gemini-pdf-settings-title"
+        ><html:h2 data-l10n-id="askmypaper-settings-title"
           >LLM API Settings</html:h2
         ></label
       >
@@ -58,12 +58,12 @@
       <hbox align="center">
         <label
           control="__addonRef__-llm-system-prompt"
-          data-l10n-id="gemini-pdf-system-prompt-label"
+          data-l10n-id="askmypaper-system-prompt-label"
           >System Prompt:</label
         >
         <html:textarea
           id="__addonRef__-llm-system-prompt"
-          preference="__prefsPrefix__.geminiSystemPrompt"
+          preference="__prefsPrefix__.systemPrompt"
           flex="1"
           rows="5"
         />
@@ -71,7 +71,7 @@
       <hbox align="center">
         <label
           control="__addonRef__-prompt-for-selection"
-          data-l10n-id="gemini-pdf-prompt-for-selection-label"
+          data-l10n-id="askmypaper-prompt-for-selection-label"
           >Prompt for Selection:</label
         >
         <html:textarea
@@ -125,7 +125,7 @@
       <hbox align="center">
         <label
           control="__addonRef__-title-generation-model"
-          data-l10n-id="gemini-pdf-title-generation-model-label"
+          data-l10n-id="askmypaper-title-generation-model-label"
           >Title Generation Model:</label
         >
         <html:input
@@ -138,7 +138,7 @@
       <hbox align="center">
         <label
           control="__addonRef__-title-generation-prompt"
-          data-l10n-id="gemini-pdf-title-generation-prompt-label"
+          data-l10n-id="askmypaper-title-generation-prompt-label"
           >Title Generation Prompt:</label
         >
         <html:textarea
@@ -148,15 +148,49 @@
           rows="4"
         />
       </hbox>
+      <separator class="hr" />
+      <hbox align="center">
+        <label control="__addonRef__-citation-render-provider"
+          >Citation Render Provider:</label
+        >
+        <html:input
+          type="text"
+          id="__addonRef__-citation-render-provider"
+          preference="__prefsPrefix__.citationRenderProvider"
+          flex="1"
+        />
+      </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-citation-render-model"
+          >Citation Render Model:</label
+        >
+        <html:input
+          type="text"
+          id="__addonRef__-citation-render-model"
+          preference="__prefsPrefix__.citationRenderModel"
+          flex="1"
+        />
+      </hbox>
+      <hbox align="center">
+        <label control="__addonRef__-citation-render-prompt"
+          >Citation Render Prompt:</label
+        >
+        <html:textarea
+          id="__addonRef__-citation-render-prompt"
+          preference="__prefsPrefix__.citationRenderPrompt"
+          flex="1"
+          rows="4"
+        />
+      </hbox>
       <hbox align="center">
         <label
-          control="__addonRef__-gemini-chat-history-limit"
-          data-l10n-id="gemini-pdf-context-window-size-label"
+          control="__addonRef__-chat-history-limit"
+          data-l10n-id="askmypaper-context-window-size-label"
           >Chat History Limit (messages):</label
         >
         <html:input
           type="number"
-          id="__addonRef__-gemini-chat-history-limit"
+          id="__addonRef__-chat-history-limit"
           preference="__prefsPrefix__.contextWindowSize"
           flex="1"
           min="0"

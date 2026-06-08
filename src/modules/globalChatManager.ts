@@ -37,10 +37,8 @@ class GlobalChatManager extends EventEmitter<GlobalChatManagerEvents> {
   }
 
   /**
-   * Loads all conversation attachments associated with the parent item,
+   * Loads all chat sessions associated with the parent item,
    * and returns them as ChatSession instances.
-   * @param parentItem The Zotero parent item.
-   * @returns A promise that resolves to an array of ChatSession instances.
    */
   public async loadSessionsForItem(
     parentItem: Zotero.Item,
@@ -52,8 +50,8 @@ class GlobalChatManager extends EventEmitter<GlobalChatManagerEvents> {
     }
 
     const conversations = (await this.repository.loadSessions(parentItem)).map(
-      ({ history, attachment }) =>
-        new ChatSession(history, parentItem, this, this.repository, attachment),
+      ({ history }) =>
+        new ChatSession(history, parentItem, this, this.repository),
     );
     this._sessions.set(itemKey, conversations);
     this.emit("sessions-loaded", { itemKey: itemKey, sessions: conversations });
@@ -73,8 +71,7 @@ class GlobalChatManager extends EventEmitter<GlobalChatManagerEvents> {
     Zotero.log(
       `[GlobalChatManager] createSession: New session object created with ID: ${newSession.id}`,
     );
-    await newSession.init(); // Create attachment
-    await newSession.save(); // Save initial state to attachment
+    await newSession.save(); // Save initial state to the aggregate parent item store
 
     const itemKey = parentItem.key;
     if (!this._sessions.has(itemKey)) {
@@ -96,7 +93,7 @@ class GlobalChatManager extends EventEmitter<GlobalChatManagerEvents> {
    */
   public async deleteSession(session: ChatSession): Promise<void> {
     const itemKey = session.history.metadata.zoteroParentItemKey;
-    await session.delete(); // Delete attachment
+    await session.delete();
 
     if (this._sessions.has(itemKey)) {
       const updatedSessions = this._sessions

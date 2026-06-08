@@ -25,8 +25,6 @@ export interface ProviderConfig {
   currentModelList: string;
   defaultModel: string;
   defaultTitleModel: string;
-  legacyModelLists: string[];
-  legacySelectedModels: string[];
 }
 
 export const PROVIDERS: readonly ProviderId[] = [
@@ -46,15 +44,6 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
       "gemini-3.5-flash,gemini-3.1-pro-preview,gemini-3.1-flash-lite,gemini-3-flash-preview",
     defaultModel: "gemini-3.5-flash",
     defaultTitleModel: "gemini-3.1-flash-lite",
-    legacyModelLists: [
-      "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro,gemini-3-pro-preview,gemini-3-flash-preview",
-    ],
-    legacySelectedModels: [
-      "gemini-2.5-flash-lite",
-      "gemini-2.5-flash",
-      "gemini-2.5-pro",
-      "gemini-3-pro-preview",
-    ],
   },
   openai: {
     id: "openai",
@@ -66,18 +55,6 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
       "gpt-5.5,gpt-5.5-pro,gpt-5.4,gpt-5.4-pro,gpt-5.4-mini,gpt-5.4-nano",
     defaultModel: "gpt-5.5",
     defaultTitleModel: "gpt-5.4-nano",
-    legacyModelLists: [
-      "gpt-5.5,gpt-5.4,gpt-5.4-mini,gpt-5.4-nano",
-      "gpt-5.2,gpt-5.2-pro,gpt-5.1,gpt-5,gpt-5-mini,gpt-4.1",
-    ],
-    legacySelectedModels: [
-      "gpt-5.2",
-      "gpt-5.2-pro",
-      "gpt-5.1",
-      "gpt-5",
-      "gpt-5-mini",
-      "gpt-4.1",
-    ],
   },
   anthropic: {
     id: "anthropic",
@@ -89,17 +66,11 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
       "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001,claude-opus-4-5-20251101",
     defaultModel: "claude-sonnet-4-5-20250929",
     defaultTitleModel: "claude-haiku-4-5-20251001",
-    legacyModelLists: ["claude-sonnet-4-5,claude-haiku-4-5,claude-opus-4-1"],
-    legacySelectedModels: [
-      "claude-sonnet-4-5",
-      "claude-haiku-4-5",
-      "claude-opus-4-1",
-      "claude-opus-4-1-20250805",
-    ],
   },
 };
 
 export const DEFAULT_TITLE_GENERATION_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_CITATION_RENDER_MODEL = "gemini-3.1-flash-lite";
 
 export function getProviderConfig(provider: ProviderId): ProviderConfig {
   return PROVIDER_CONFIGS[provider];

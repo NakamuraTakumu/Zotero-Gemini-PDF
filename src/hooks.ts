@@ -13,8 +13,8 @@ async function onStartup() {
   ]);
 
   // Define a global debug function for testing clicks
-  _globalThis.geminiDebugClick = () => {
-    Zotero.log("[Gemini PDF] Global debug click fired!");
+  _globalThis.askMyPaperDebugClick = () => {
+    Zotero.log("[Ask My Paper] Global debug click fired!");
   };
 
   initLocale();
@@ -22,7 +22,7 @@ async function onStartup() {
 
   // Register the observer for item changes
   // Zotero.Notifier.registerObserver(hooks, ["item"], observerID);
-  // Zotero.log("GeminiPDFPlugin: Item observer registered.");
+  // Zotero.log("AskMyPaperPlugin: Item observer registered.");
 
   // Register the reader item pane section
   await ReaderItemPaneFactory.registerReaderItemPaneSection();
@@ -42,7 +42,7 @@ async function onStartup() {
     id: addon.data.config.addonRef,
     pluginID: addon.data.config.addonID, // Add pluginID
     src: `chrome://${addon.data.config.addonRef}/content/preferences.xhtml`, // Change to .xhtml
-    label: "Gemini PDF Settings", // You can localize this label
+    label: "Ask My Paper Settings", // You can localize this label
     // image: `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`, // Optional icon
   });
 
@@ -73,7 +73,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 function onShutdown(): void {
   ztoolkit.unregisterAll();
   // Zotero.Notifier.unregisterObserver(observerID); // Unregister the observer
-  // Zotero.log("GeminiPDFPlugin: Item observer unregistered.");
+  // Zotero.log("AskMyPaperPlugin: Item observer unregistered.");
   // Remove addon object
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed

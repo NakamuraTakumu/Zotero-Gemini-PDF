@@ -230,7 +230,7 @@ export class ChatSessionManager {
       .getAllSessions(this._itemKey)
       .find((s) => s.id === this._activeSessionId);
     Zotero.log(
-      `[Gemini PDF] ChatSessionManager.getActiveSession: Returning session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`,
+      `[Ask My Paper] ChatSessionManager.getActiveSession: Returning session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`,
     );
     return activeSession || null;
   }
@@ -309,7 +309,6 @@ export class ChatSessionManager {
     model: string;
     thoughts?: string[];
     citations?: LlmCitation[];
-    groundingMetadata?: any;
   }> {
     const activeSession = this.getActiveSession(); // Get active session on demand
     if (!activeSession) {

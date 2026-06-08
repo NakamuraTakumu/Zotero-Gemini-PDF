@@ -27,7 +27,7 @@ export function buildReaderItemPaneBodyXhtml(): string {
               </html:span>
               <html:span class="llm-field">
                   <html:label for="llm-model-select">Model</html:label>
-                  <html:select id="llm-model-select" class="gemini-model-select"></html:select>
+                  <html:select id="llm-model-select" class="llm-model-select"></html:select>
               </html:span>
           </html:div>
           <html:div class="llm-option-row">

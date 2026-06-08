@@ -30,7 +30,7 @@ export class ReaderItemPaneFactory {
     isRequestInProgress: boolean,
   ) {
     const event = new (Zotero.getMainWindow() as any).CustomEvent(
-      "gemini-pdf-request-status-changed",
+      "ask-my-paper-request-status-changed",
       {
         bubbles: true,
         cancelable: true,
@@ -50,25 +50,25 @@ export class ReaderItemPaneFactory {
    */
   static async registerReaderItemPaneSection() {
     Zotero.ItemPaneManager.registerSection({
-      paneID: "reader-item-info",
+      paneID: "ask-my-paper-chat",
       pluginID: addon.data.config.addonID,
       header: {
-        l10nID: getLocaleID("item-section-example1-head-text"),
-        icon: `chrome://${addon.data.config.addonRef}/content/icons/gemini.svg`,
+        l10nID: getLocaleID("askmypaper-reader-chat-head-text"),
+        icon: `chrome://${addon.data.config.addonRef}/content/icons/ask-my-paper.svg`,
       },
       sidenav: {
-        l10nID: getLocaleID("item-section-example1-sidenav-tooltip"),
-        icon: `chrome://${addon.data.config.addonRef}/content/icons/gemini.svg`,
+        l10nID: getLocaleID("askmypaper-reader-chat-sidenav-tooltip"),
+        icon: `chrome://${addon.data.config.addonRef}/content/icons/ask-my-paper.svg`,
       },
       bodyXHTML: buildReaderItemPaneBodyXhtml(),
       onInit: ({ body }) => {
-        Zotero.log("[Gemini PDF] onInit called.");
+        Zotero.log("[Ask My Paper] onInit called.");
         try {
           const chatPane = new ChatPane(body as HTMLElement);
           ReaderItemPaneFactory._chatPanes.set(chatPane.paneId, chatPane); // Store instance locally
         } catch (e) {
           Zotero.logError(
-            new Error(`[Gemini PDF] Error initializing pane: ${e}`),
+            new Error(`[Ask My Paper] Error initializing pane: ${e}`),
           );
         }
       },

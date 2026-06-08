@@ -11,7 +11,7 @@ declare namespace _ZoteroTypes {
       "geminiApiKey": string;
       "openaiApiKey": string;
       "anthropicApiKey": string;
-      "geminiSystemPrompt": string;
+      "systemPrompt": string;
       "contextWindowSize": number;
       "promptForSelection": string;
       "geminiModelList": string;
@@ -20,12 +20,15 @@ declare namespace _ZoteroTypes {
       "geminiSelectedModel": string;
       "openaiSelectedModel": string;
       "anthropicSelectedModel": string;
-      "geminiUseGoogleSearch": boolean;
+      "useWebSearch": boolean;
       "reasoningMode": string;
       "chatPanelHeight": number;
       "titleGenerationProvider": string;
       "titleGenerationModel": string;
       "titleGenerationPrompt": string;
+      "citationRenderProvider": string;
+      "citationRenderModel": string;
+      "citationRenderPrompt": string;
     };
   }
 }

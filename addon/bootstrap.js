@@ -11,7 +11,7 @@ function install(data, reason) {}
 
 async function startup({ id, version, resourceURI, rootURI }, reason) {
   try {
-    Zotero.log(`[Gemini PDF] Plugin started up! Version: ${version}`); // Changed to Zotero.log
+    Zotero.log(`[Ask My Paper] Plugin started up! Version: ${version}`); // Changed to Zotero.log
     var aomStartup = Components.classes[
       "@mozilla.org/addons/addon-manager-startup;1"
     ].getService(Components.interfaces.amIAddonManagerStartup);
