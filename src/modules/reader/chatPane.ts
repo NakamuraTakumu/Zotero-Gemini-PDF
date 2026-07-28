@@ -249,10 +249,91 @@ export class ChatPane {
     if (chatMessages) {
       const savedHeight = getPref(PREF_CHAT_PANEL_HEIGHT) as number;
       if (savedHeight) {
-        chatMessages.style.height = `${savedHeight}px`;
+        chatMessages.style.height = `${this._clampChatMessagesHeight(savedHeight, false)}px`;
         chatMessages.style.maxHeight = "none";
       }
     }
+  }
+
+  private _clampChatMessagesHeight(
+    requestedHeight: number,
+    allowContentGrowth = true,
+  ): number {
+    const minHeight = 50;
+    const chatMessages = this.uiElements.body.querySelector(
+      "#chat-messages",
+    ) as HTMLDivElement | null;
+    const chatContainer = this.uiElements.body.querySelector(
+      ".chat-container",
+    ) as HTMLDivElement | null;
+
+    if (!chatMessages || !chatContainer) {
+      return Math.max(minHeight, Math.round(requestedHeight));
+    }
+
+    const maxHeight = this._getMaxChatMessagesHeight(
+      chatContainer,
+      chatMessages,
+      minHeight,
+      requestedHeight,
+      allowContentGrowth,
+    );
+    return Math.round(
+      Math.min(Math.max(requestedHeight, minHeight), maxHeight),
+    );
+  }
+
+  private _getMaxChatMessagesHeight(
+    chatContainer: HTMLDivElement,
+    chatMessages: HTMLDivElement,
+    minHeight: number,
+    requestedHeight: number,
+    allowContentGrowth: boolean,
+  ): number {
+    const containerStyle =
+      this.uiElements.doc.defaultView?.getComputedStyle(chatContainer);
+    const containerPadding =
+      this._cssPixels(containerStyle?.paddingTop) +
+      this._cssPixels(containerStyle?.paddingBottom);
+    const containerContentHeight =
+      chatContainer.clientHeight - containerPadding;
+    const messagesStyle =
+      this.uiElements.doc.defaultView?.getComputedStyle(chatMessages);
+    const messagesMargins =
+      this._cssPixels(messagesStyle?.marginTop) +
+      this._cssPixels(messagesStyle?.marginBottom);
+    const reservedHeight = Array.from(chatContainer.children).reduce(
+      (total, child) => {
+        if (child === chatMessages || !(child instanceof HTMLElement)) {
+          return total;
+        }
+        const childStyle =
+          this.uiElements.doc.defaultView?.getComputedStyle(child);
+        return (
+          total +
+          child.getBoundingClientRect().height +
+          this._cssPixels(childStyle?.marginTop) +
+          this._cssPixels(childStyle?.marginBottom)
+        );
+      },
+      0,
+    );
+    const containerMaxHeight =
+      containerContentHeight - reservedHeight - messagesMargins;
+    const containerRect = chatContainer.getBoundingClientRect();
+    const viewportHeight = this.uiElements.doc.defaultView?.innerHeight ?? 0;
+    const viewportMaxHeight =
+      viewportHeight - containerRect.top - reservedHeight - messagesMargins - 8;
+    const boundedMaxHeight = Math.max(containerMaxHeight, viewportMaxHeight);
+    const maxHeight = allowContentGrowth
+      ? Math.max(boundedMaxHeight, requestedHeight)
+      : boundedMaxHeight;
+    return Math.max(minHeight, Math.floor(maxHeight));
+  }
+
+  private _cssPixels(value: string | undefined): number {
+    const parsed = Number.parseFloat(value || "0");
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   private _handleLinkClick(e: Event) {
@@ -331,35 +412,23 @@ export class ChatPane {
     const { doc, body } = this.uiElements;
     const startY = e.clientY;
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
-    const startHeight = chatMessages.clientHeight;
-    const chatContainer = body.querySelector(
-      ".chat-container",
-    ) as HTMLDivElement;
-    const chatInputArea = body.querySelector(
-      ".chat-input-area",
-    ) as HTMLDivElement;
-    const resizer = body.querySelector(".chat-resizer") as HTMLDivElement; // セレクタをIDからクラスへ変更
+    const startHeight = chatMessages.getBoundingClientRect().height;
 
     const doDrag = (e: MouseEvent) => {
       const newHeight = startHeight + (e.clientY - startY);
-      const minHeight = 50;
-      if (chatContainer && chatInputArea && resizer) {
-        const maxHeight =
-          chatContainer.clientHeight -
-          chatInputArea.clientHeight -
-          resizer.clientHeight -
-          30;
-        if (newHeight > minHeight && newHeight < maxHeight) {
-          chatMessages.style.height = `${newHeight}px`;
-          chatMessages.style.maxHeight = "none";
-        }
-      }
+      chatMessages.style.height = `${this._clampChatMessagesHeight(newHeight)}px`;
+      chatMessages.style.maxHeight = "none";
     };
 
     const stopDrag = () => {
       doc.removeEventListener("mousemove", doDrag, false);
       doc.removeEventListener("mouseup", stopDrag, false);
-      setPref(PREF_CHAT_PANEL_HEIGHT, chatMessages.clientHeight);
+      const effectiveHeight = this._clampChatMessagesHeight(
+        chatMessages.getBoundingClientRect().height,
+      );
+      chatMessages.style.height = `${effectiveHeight}px`;
+      chatMessages.style.maxHeight = "none";
+      setPref(PREF_CHAT_PANEL_HEIGHT, effectiveHeight);
     };
 
     doc.addEventListener("mousemove", doDrag, false);

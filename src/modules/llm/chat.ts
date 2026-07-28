@@ -10,6 +10,7 @@ import {
   LlmCitation,
   LlmDiagnostics,
   ParentItemFileMetadata,
+  PdfCitationToolCallTrace,
   ProviderId,
 } from "../../types/chat";
 import { PREF_SYSTEM_PROMPT } from "../../utils/constants";
@@ -24,13 +25,22 @@ import {
 } from "./chatProviderAdapters";
 import {
   createAssistantStoredMessage,
-  toLangChainMessages,
+  toLangChainMessagesForLlmContext,
 } from "./langChainMessages";
 import {
   createPdfCitationTools,
+  PdfCitationRangeRegistry,
   normalizePdfCitationBlocks,
+  summarizePdfCitationToolCall,
 } from "../pdfCitation";
 import { renderPdfCitationDisplayText } from "./citationRenderService";
+
+const PDF_CITATION_FINALIZATION_PROMPT = [
+  "The PDF citation tool round limit has been reached.",
+  "Do not call any more tools.",
+  "Answer the user's question now using only the tool results already provided.",
+  'When citing PDF evidence, use only rangeId values already returned by read_pdf_text_range in empty blocks such as ::: citation {"rangeId":"r_7k9p2x4q"}\n:::.',
+].join("\n");
 
 export interface LlmChatResponse {
   provider: ProviderId;
@@ -49,21 +59,25 @@ interface SendMessageOptions {
   policy?: Partial<LlmRequestPolicy>;
 }
 
-function buildMessages(
+async function buildMessages(
   history: StoredMessage[],
   text: string,
   pdfContentBlocks: LangChainContentBlock[],
   citationContext?: string,
-): BaseMessage[] {
+): Promise<BaseMessage[]> {
   const messages: BaseMessage[] = [];
   const systemPrompt = getPref(PREF_SYSTEM_PROMPT) as string | undefined;
   if (systemPrompt) {
     messages.push(new SystemMessage(systemPrompt));
   }
-  messages.push(...toLangChainMessages(history));
+  const historyContext = await toLangChainMessagesForLlmContext(history);
+  messages.push(...historyContext.messages);
 
   const contentBlocks = [
     ...pdfContentBlocks,
+    ...(historyContext.previousPdfEvidenceContext
+      ? [{ type: "text", text: historyContext.previousPdfEvidenceContext }]
+      : []),
     ...(citationContext ? [{ type: "text", text: citationContext }] : []),
     { type: "text", text },
   ];
@@ -82,13 +96,7 @@ function buildCitationAttachmentContext(
     (file) =>
       `- libraryID=${file.libraryID}, attachmentKey=${file.zoteroAttachmentKey}, fileName=${file.fileName}`,
   );
-  return [
-    "PDF citation tool attachment IDs:",
-    ...attachmentLines,
-    "When you cite PDF evidence, first use find_pdf_text, then read_pdf_text_range if needed, and choose the smallest complete sentence, formula block, theorem/definition item, or bullet item that directly supports one claim.",
-    'Write PDF citation blocks with only locator JSON and an empty body: ::: citation {"locator":{"libraryID":1,"attachmentKey":"ATTACHMENT_KEY","start":1203,"end":1264}}\\n:::',
-    "Do not write original quotes or translated display text inside PDF citation blocks. The plugin will render the display text from the verified locator.",
-  ].join("\n");
+  return ["PDF citation tool attachment IDs:", ...attachmentLines].join("\n");
 }
 
 function extractText(message: AIMessage): string {
@@ -251,17 +259,22 @@ function extractCitations(
   return dedupeCitations(citations);
 }
 
-async function invokeWithPdfCitationTools(
+export async function invokeWithPdfCitationTools(
   chatModel: any,
   messages: BaseMessage[],
   invokeOptions: Record<string, unknown>,
   tools: any[],
   nativeTools: unknown[],
-): Promise<{ response: AIMessage; localToolCallCount: number }> {
+): Promise<{
+  response: AIMessage;
+  localToolCallCount: number;
+  pdfCitationToolCalls: PdfCitationToolCallTrace[];
+}> {
   if (tools.length === 0 || typeof chatModel.bindTools !== "function") {
     return {
       response: (await chatModel.invoke(messages, invokeOptions)) as AIMessage,
       localToolCallCount: 0,
+      pdfCitationToolCalls: [],
     };
   }
 
@@ -273,6 +286,7 @@ async function invokeWithPdfCitationTools(
   const workingMessages = [...messages];
   let lastResponse: AIMessage | undefined;
   let toolCallCount = 0;
+  const pdfCitationToolCalls: PdfCitationToolCallTrace[] = [];
   const maxRounds = 8;
   const maxToolCalls = 20;
 
@@ -297,7 +311,11 @@ async function invokeWithPdfCitationTools(
           `[Ask My Paper] PDF citation tool loop completed: calls=${toolCallCount}, rounds=${round + 1}`,
         );
       }
-      return { response: lastResponse, localToolCallCount: toolCallCount };
+      return {
+        response: lastResponse,
+        localToolCallCount: toolCallCount,
+        pdfCitationToolCalls,
+      };
     }
 
     workingMessages.push(lastResponse);
@@ -309,12 +327,22 @@ async function invokeWithPdfCitationTools(
           : `${toolName}-${round}-${toolCallCount}`;
       const selectedTool = toolByName.get(toolName);
       if (!selectedTool || toolCallCount >= maxToolCalls) {
+        const errorMessage =
+          toolCallCount >= maxToolCalls
+            ? "PDF citation tool call limit reached."
+            : `Unknown PDF citation tool: ${toolName}`;
+        pdfCitationToolCalls.push(
+          summarizePdfCitationToolCall({
+            round: round + 1,
+            toolName,
+            args: toolCall.args || {},
+            status: "error",
+            error: errorMessage,
+          }),
+        );
         workingMessages.push(
           new ToolMessage({
-            content:
-              toolCallCount >= maxToolCalls
-                ? "PDF citation tool call limit reached."
-                : `Unknown PDF citation tool: ${toolName}`,
+            content: errorMessage,
             name: toolName,
             tool_call_id: toolCallId,
             status: "error",
@@ -326,6 +354,15 @@ async function invokeWithPdfCitationTools(
       toolCallCount++;
       try {
         const result = await selectedTool.invoke(toolCall.args || {});
+        pdfCitationToolCalls.push(
+          summarizePdfCitationToolCall({
+            round: round + 1,
+            toolName,
+            args: toolCall.args || {},
+            status: "success",
+            result,
+          }),
+        );
         workingMessages.push(
           new ToolMessage({
             content:
@@ -340,6 +377,15 @@ async function invokeWithPdfCitationTools(
           new Error(
             `[Ask My Paper] PDF citation tool failed: ${toolName}: ${error.message || String(error)}`,
           ),
+        );
+        pdfCitationToolCalls.push(
+          summarizePdfCitationToolCall({
+            round: round + 1,
+            toolName,
+            args: toolCall.args || {},
+            status: "error",
+            error,
+          }),
         );
         workingMessages.push(
           new ToolMessage({
@@ -356,11 +402,25 @@ async function invokeWithPdfCitationTools(
   Zotero.logError(
     new Error("[Ask My Paper] PDF citation tool loop reached max rounds."),
   );
+  if (lastResponse) {
+    workingMessages.push(new HumanMessage(PDF_CITATION_FINALIZATION_PROMPT));
+    const finalResponse = (await chatModel.invoke(
+      workingMessages,
+      invokeOptionsWithoutTools,
+    )) as AIMessage;
+    Zotero.debug(
+      `[Ask My Paper] PDF citation tool loop finalized after max rounds: calls=${toolCallCount}, rounds=${maxRounds}`,
+    );
+    return {
+      response: finalResponse,
+      localToolCallCount: toolCallCount,
+      pdfCitationToolCalls,
+    };
+  }
   return {
-    response:
-      lastResponse ||
-      ((await chatModel.invoke(messages, invokeOptions)) as AIMessage),
+    response: (await chatModel.invoke(messages, invokeOptions)) as AIMessage,
     localToolCallCount: toolCallCount,
+    pdfCitationToolCalls,
   };
 }
 
@@ -377,10 +437,11 @@ export async function sendMessageToLlm(
 
   const adapter = getChatProviderAdapter(provider);
   const policy = { ...getRequestPolicy(), ...options.policy };
+  const rangeRegistry = new PdfCitationRangeRegistry();
   const citationTools = (options.metadata?.files || []).some(
     (file) => typeof file.libraryID === "number",
   )
-    ? createPdfCitationTools()
+    ? createPdfCitationTools({ rangeRegistry })
     : [];
   const effectivePolicy =
     provider === "gemini" && citationTools.length > 0 && policy.useWebSearch
@@ -395,7 +456,7 @@ export async function sendMessageToLlm(
   Zotero.log(
     `[Ask My Paper] PDF citation tools setup: tools=${citationTools.length}, bindTools=${typeof (chatModel as any).bindTools === "function"}, files=${options.metadata?.files?.length || 0}`,
   );
-  const messages = buildMessages(
+  const messages = await buildMessages(
     history,
     text,
     adapter.buildPdfContentBlocks(options.metadata),
@@ -403,13 +464,14 @@ export async function sendMessageToLlm(
   );
   const invokeOptions = adapter.buildInvokeOptions(effectivePolicy);
   const nativeTools = adapter.buildNativeTools(effectivePolicy);
-  const { response, localToolCallCount } = await invokeWithPdfCitationTools(
-    chatModel,
-    messages,
-    invokeOptions,
-    citationTools,
-    nativeTools,
-  );
+  const { response, localToolCallCount, pdfCitationToolCalls } =
+    await invokeWithPdfCitationTools(
+      chatModel,
+      messages,
+      invokeOptions,
+      citationTools,
+      nativeTools,
+    );
   const thoughts = extractThoughts(response);
   let citationRenderProvider: string | undefined;
   let citationRenderModel: string | undefined;
@@ -418,6 +480,7 @@ export async function sendMessageToLlm(
     {
       allowCitationBlocks: citationTools.length === 0 || localToolCallCount > 0,
       pdfFiles: options.metadata?.files,
+      rangeRegistry,
       renderDisplayText: async (input) => {
         const rendered = await renderPdfCitationDisplayText({
           rawText: input.rawText,
@@ -440,6 +503,7 @@ export async function sendMessageToLlm(
     effectivePolicy,
   );
   diagnostics.pdfCitationToolCallCount = localToolCallCount;
+  diagnostics.pdfCitationToolCalls = pdfCitationToolCalls;
   diagnostics.pdfCitationCount = normalizedCitations.normalizedCount;
   diagnostics.pdfCitationDroppedCount = normalizedCitations.droppedCount;
   diagnostics.pdfCitationWarnings = normalizedCitations.warnings;

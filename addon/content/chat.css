@@ -35,6 +35,8 @@
   flex-direction: column;
   height: 100%;
   width: 100%; /* Constrain width to parent */
+  min-height: 0;
+  min-width: 0;
   overflow-x: hidden; /* Prevent horizontal overflow */
   font-family: sans-serif;
   background-color: var(--chat-bg);
@@ -46,11 +48,16 @@
   overflow-y: auto;
   overscroll-behavior-y: contain; /* Prevent scrolling parent element */
   max-height: 200px; /* Initial limited height */
+  min-height: 50px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
   padding: 10px;
   border: 1px solid var(--chat-border-color);
   margin-bottom: 10px;
   background-color: var(--chat-input-bg); /* Using input bg for messages area */
   border-radius: 4px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
@@ -85,7 +92,7 @@
 }
 *|div.llm-primary-row {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(160px, 1.2fr);
   gap: 6px;
   min-width: 0;
 }
@@ -151,8 +158,22 @@
 }
 *|button.delete-session-button,
 *|button.regenerate-title-button {
+  width: 28px;
+  height: 28px;
   min-width: 28px;
-  padding: 2px 6px;
+  padding: 0;
+  border: 1px solid var(--chat-input-border);
+  border-radius: 4px;
+  background: var(--chat-input-bg);
+  color: var(--chat-text-color);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
+}
+*|button.delete-session-button:hover,
+*|button.regenerate-title-button:hover {
+  background: var(--chat-subtle-bg);
 }
 *|div.chat-input-area {
   display: flex;
@@ -202,6 +223,10 @@
   padding: 8px 12px;
   border-radius: 18px;
   word-wrap: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   user-select: text; /* Explicitly allow text selection */
 }
 
@@ -248,10 +273,25 @@
   border: 1px solid var(--bot-message-border);
   align-self: flex-start;
   border-bottom-left-radius: 4px;
+  width: 100%;
 }
 
 *|div.message p {
+  display: table !important;
+  table-layout: fixed !important;
+  width: 100% !important;
   margin: 0;
+  white-space: normal !important;
+}
+
+*|div.message > *,
+*|div.message li,
+*|div.message td,
+*|div.message th {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 *|div.message pre,
@@ -400,12 +440,20 @@
   border-left: 4px solid var(--chat-border-color); /* blockquoteのスタイルを模倣 */
   padding: 1.5em 15px 1em 15px; /* 上にスペースを空ける (引用元のため) */
   margin: 1.5em 0;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .citation-source {
   position: absolute;
   top: 5px; /* 上からの位置 */
   left: 15px; /* 左からの位置 */
+  max-width: calc(100% - 30px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.75em; /* さらに小さく */
   color: #888; /* 少し薄く */
   font-style: italic;
@@ -418,7 +466,9 @@
 }
 
 .citation-content {
-  /* スタイル不要 */
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* カスタムcitationポップアップのスタイル */
@@ -456,6 +506,15 @@
 .katex-display > .katex {
   white-space: normal !important; /* 内部的にも改行ルールをリセット */
   text-indent: 0 !important;
+}
+
+/* Inline math should scroll inside the message instead of widening the pane. */
+*|div.message .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
 }
 
 /* Styling for collapsible sections (content details only) */

@@ -56,6 +56,16 @@ export interface LlmCitation {
   provider?: ProviderId;
 }
 
+export type PdfCitationToolCallStatus = "success" | "error";
+
+export interface PdfCitationToolCallTrace {
+  round: number;
+  toolName: string;
+  argsSummary: Record<string, unknown>;
+  status: PdfCitationToolCallStatus;
+  resultSummary: Record<string, unknown>;
+}
+
 export interface LlmDiagnostics {
   searchRequested: boolean;
   searchUsed: boolean;
@@ -74,6 +84,7 @@ export interface LlmDiagnostics {
   anthropicWebSearchResultCount?: number;
   anthropicWebSearchRequestCount?: number;
   pdfCitationToolCallCount?: number;
+  pdfCitationToolCalls?: PdfCitationToolCallTrace[];
   pdfCitationCount?: number;
   pdfCitationDroppedCount?: number;
   pdfCitationWarnings?: string[];

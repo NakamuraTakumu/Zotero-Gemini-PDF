@@ -14,8 +14,8 @@ export function buildReaderItemPaneBodyXhtml(): string {
       <html:div class="chat-session-area">
           <html:label for="chat-session-switcher">Session:</html:label>
           <html:select id="chat-session-switcher" class="chat-session-switcher"></html:select>
-          <html:button id="delete-session-button" class="delete-session-button">Delete</html:button>
-          <html:button id="regenerate-title-button" class="regenerate-title-button" title="Regenerate title">Regenerate</html:button>
+          <html:button id="delete-session-button" class="delete-session-button" title="Delete chat" aria-label="Delete chat">×</html:button>
+          <html:button id="regenerate-title-button" class="regenerate-title-button" title="Regenerate title" aria-label="Regenerate title">↻</html:button>
       </html:div>
       <html:div class="chat-model-selector-area">
           <html:div class="llm-primary-row">
