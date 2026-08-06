@@ -1,3 +1,18 @@
+---
+title: "PDF Citation Tool Call Position"
+responsibility: "PDF citationのlocator精度問題について、旧実装、試行、不採用案を外部レビュー向けに記録する。"
+summary: "tool call位置とlocator精度を分離して検討した履歴であり、現在のquote登録仕様を定義する文書ではない。"
+created: "2026-06-08 14:50 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "low"
+session: "019e970b-9398-7723-bc6d-705e97b2012f"
+handling: "document-workflow"
+stale: true
+---
+
 # PDF Citation Tool Call Position
 
 - Created: 2026-06-08 14:50 UTC
@@ -114,18 +129,18 @@ OpenAI Responses は raw `response.output` が順序を持つ。ただし LangCh
 
 ### Attempts and Failure Modes
 
-| 案 | 狙い | 失敗理由 / 残る問題 |
-| --- | --- | --- |
-| Prompt-only locator discipline | `read_pdf_text_range` を必ず使うよう system prompt で強める | LLM は tool 使用指示を必ず守らない。locator を LLM が作る構造は残る。 |
-| Citation render prompt hardening | citation render 側で `rawText` にない内容を補わないよう制約する | 表示用説明の過剰補完は抑えられるが、locator の `start` / `end` 自体は直らない。 |
-| Hidden continuation / segmented generation | `::: citation` 出力後に app が生成を止め、`rawText` を追加して続きを生成する | 会話履歴としては続くが、乱数状態、KV cache、未出力候補、非公開 reasoning は連続しない。自然な生成途中の割り込みではない。 |
-| Cancel marker after emitted citation | citation 後に `rawText` を見せ、必要なら直前 citation を取り消す | hidden continuation と同じ断絶を持つ。取り消し protocol も複雑になる。 |
-| Placeholder insertion | `{{pdf_citation:1}}` などを本文に置かせ、plugin が展開する | ユーザーが placeholder 導入を望んでいない。表示形式以外の出力契約が増える。 |
-| Completed citation block returned by tool | tool が完成済み `::: citation` block を返し、LLM が貼る | LLM が貼り間違える余地が残る。invocation/log を正本にしたい要望より弱い。 |
-| `create_pdf_citation(locator)` tool call | citation したい位置で tool を呼ばせ、tool call log を citation block に変換する | citation の表示位置問題は改善するが、locator argument を LLM が作るなら locator 精度問題は残る。 |
-| Quote / match based citation tool | LLM は locator ではなく quote を渡し、plugin が exact range を検索する | locator の数値生成は避けられるが、どの quote がどの主張を支えるかは LLM が選ぶ。曖昧一致、重複出現、短すぎる quote の問題もある。 |
-| Claim-evidence JSON planning | LLM に主張と根拠候補の対応を構造化させる | 構造化しても、対応づけ自体が LLM 判断なら幻覚や過剰対応は残る。 |
-| Evidence-card provenance | retrieval / extraction が exact locator 付き evidence card を先に作り、LLM はその card だけで回答する | LLM に自由な citation 範囲を選ばせない点は新しいが、citation 粒度が粗くなり得る。retrieval 品質が回答範囲を制約する。 |
+| 案                                         | 狙い                                                                                                  | 失敗理由 / 残る問題                                                                                                               |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Prompt-only locator discipline             | `read_pdf_text_range` を必ず使うよう system prompt で強める                                           | LLM は tool 使用指示を必ず守らない。locator を LLM が作る構造は残る。                                                             |
+| Citation render prompt hardening           | citation render 側で `rawText` にない内容を補わないよう制約する                                       | 表示用説明の過剰補完は抑えられるが、locator の `start` / `end` 自体は直らない。                                                   |
+| Hidden continuation / segmented generation | `::: citation` 出力後に app が生成を止め、`rawText` を追加して続きを生成する                          | 会話履歴としては続くが、乱数状態、KV cache、未出力候補、非公開 reasoning は連続しない。自然な生成途中の割り込みではない。         |
+| Cancel marker after emitted citation       | citation 後に `rawText` を見せ、必要なら直前 citation を取り消す                                      | hidden continuation と同じ断絶を持つ。取り消し protocol も複雑になる。                                                            |
+| Placeholder insertion                      | `{{pdf_citation:1}}` などを本文に置かせ、plugin が展開する                                            | ユーザーが placeholder 導入を望んでいない。表示形式以外の出力契約が増える。                                                       |
+| Completed citation block returned by tool  | tool が完成済み `::: citation` block を返し、LLM が貼る                                               | LLM が貼り間違える余地が残る。invocation/log を正本にしたい要望より弱い。                                                         |
+| `create_pdf_citation(locator)` tool call   | citation したい位置で tool を呼ばせ、tool call log を citation block に変換する                       | citation の表示位置問題は改善するが、locator argument を LLM が作るなら locator 精度問題は残る。                                  |
+| Quote / match based citation tool          | LLM は locator ではなく quote を渡し、plugin が exact range を検索する                                | locator の数値生成は避けられるが、どの quote がどの主張を支えるかは LLM が選ぶ。曖昧一致、重複出現、短すぎる quote の問題もある。 |
+| Claim-evidence JSON planning               | LLM に主張と根拠候補の対応を構造化させる                                                              | 構造化しても、対応づけ自体が LLM 判断なら幻覚や過剰対応は残る。                                                                   |
+| Evidence-card provenance                   | retrieval / extraction が exact locator 付き evidence card を先に作り、LLM はその card だけで回答する | LLM に自由な citation 範囲を選ばせない点は新しいが、citation 粒度が粗くなり得る。retrieval 品質が回答範囲を制約する。             |
 
 ### Current Reframing
 
@@ -183,9 +198,9 @@ ChatGPT Pro など外部モデルに読ませる場合、次を重点的に見�
 6. provider 差異を吸収するために ordered transcript を整備する価値は、evidence-card provenance 方式でも残るか。
 7. 実装するなら、既存 `find_pdf_text` / `read_pdf_text_range` / `normalizePdfCitationBlocks()` をどう段階的に移行するのが安全か。
 
-### Referenced File Hashes
-
 次の hash は、この文書が最初に参照した実装 snapshot を示す。現在の repository state と一致するとは限らないため、外部レビューでは構造理解の補助として扱う。
+
+### Referenced File Hashes
 
 - `package.json`: `sha256:ede04188c77f9912caea8b0c0362acb6a140eef1e771b345252952d9264627e3`
 - `src/modules/llm/chat.ts`: `sha256:2976c924a22d0a552e6645ef4e1dc8dff004f350162d4c8b5d59ef2d8dab2b77`

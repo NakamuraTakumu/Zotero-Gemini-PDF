@@ -1,3 +1,18 @@
+---
+title: "PDF Citation Locator Prompt Minimum Change"
+responsibility: "LLMがoffsetを選ぶ旧方式に対して試したprompt変更と検証結果を記録する。"
+summary: "locator精度をpromptだけで改善する試行の記録であり、現在のquote登録契約には適用しない。"
+created: "2026-06-05 13:37 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "low"
+session: "019e970b-9398-7723-bc6d-705e97b2012f"
+handling: "document-workflow"
+stale: true
+---
+
 # PDF Citation Locator Prompt Minimum Change
 
 - Created: 2026-06-05 13:37 UTC

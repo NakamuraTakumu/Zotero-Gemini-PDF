@@ -11,7 +11,7 @@ import { sendMessageToLlm } from "../llm/chat";
 import { getSelectedProvider } from "../llm/provider";
 import { v4 as uuidv4 } from "uuid";
 import { getString } from "../../utils/locale";
-import GlobalChatManager from "../globalChatManager"; // Add this import
+import type GlobalChatManager from "../globalChatManager";
 import { ChatSessionRepository } from "./chatSessionRepository";
 import { TitleGenerationService } from "./titleGenerationService";
 import { createUserStoredMessage } from "../llm/langChainMessages";
@@ -167,13 +167,9 @@ export class ChatSession {
         return true;
       }
       return false;
-    } catch (e: any) {
+    } catch {
       Zotero.logError(
-        new Error(
-          `[ChatSession] Failed to generate session title: ${
-            e.message || String(e)
-          }`,
-        ),
+        new Error("[ChatSession] Failed to generate session title."),
       );
       return false;
     }
@@ -199,13 +195,9 @@ export class ChatSession {
         return true;
       }
       return false;
-    } catch (e: any) {
+    } catch {
       Zotero.logError(
-        new Error(
-          `[ChatSession] Failed to regenerate session title: ${
-            e.message || String(e)
-          }`,
-        ),
+        new Error("[ChatSession] Failed to regenerate session title."),
       );
       return false;
     }
@@ -276,9 +268,7 @@ export class ChatSession {
       };
     } catch (e: any) {
       Zotero.logError(
-        new Error(
-          `[ChatSession] sendMessage: Error during sendMessageToLlm: ${e.message || String(e)}`,
-        ),
+        new Error("[ChatSession] Error during sendMessageToLlm."),
       );
       throw e; // エラーを再スローして_handleSendMessageのcatchブロックで処理されるようにする
     }

@@ -16,6 +16,32 @@ export interface PdfUploadAdapter {
 const geminiClients = new Map<string, GoogleGenAI>();
 const openaiClients = new Map<string, OpenAI>();
 
+type SafeProviderError = Error & { safeProviderError?: true };
+
+function getSafeErrorStatus(error: any): string | undefined {
+  const status = error?.status || error?.statusCode;
+  return typeof status === "number" || typeof status === "string"
+    ? String(status)
+    : undefined;
+}
+
+function createSafeProviderError(
+  operation: string,
+  error: any,
+): SafeProviderError {
+  if (error?.safeProviderError) {
+    return error as SafeProviderError;
+  }
+  const status = getSafeErrorStatus(error);
+  const safeError = new Error(
+    status
+      ? `${operation} failed with status ${status}.`
+      : `${operation} failed.`,
+  ) as SafeProviderError;
+  safeError.safeProviderError = true;
+  return safeError;
+}
+
 function requireApiKey(provider: ProviderId): string {
   const apiKey = getProviderApiKey(provider);
   if (!apiKey) {
@@ -88,24 +114,28 @@ class GeminiPdfUploadAdapter implements PdfUploadAdapter {
     filePath: string,
     displayName: string,
   ): Promise<ProviderPdfUploadRef> {
-    const client = getGeminiClient();
-    const bytes = readBinaryFile(filePath);
-    const pdfBlob = new Blob([bytes], { type: "application/pdf" });
-    const uploadedFile: GeminiFile = await client.files.upload({
-      file: pdfBlob,
-      config: {
-        mimeType: "application/pdf",
-        displayName,
-      },
-    });
-    if (!uploadedFile.uri) {
-      throw new Error("Gemini upload did not return a file URI.");
+    try {
+      const client = getGeminiClient();
+      const bytes = readBinaryFile(filePath);
+      const pdfBlob = new Blob([bytes], { type: "application/pdf" });
+      const uploadedFile: GeminiFile = await client.files.upload({
+        file: pdfBlob,
+        config: {
+          mimeType: "application/pdf",
+          displayName,
+        },
+      });
+      if (!uploadedFile.uri) {
+        throw new Error("Gemini upload did not return a file URI.");
+      }
+      return {
+        provider: "gemini",
+        fileUri: uploadedFile.uri,
+        uploadedAt: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      throw createSafeProviderError("Gemini file upload", error);
     }
-    return {
-      provider: "gemini",
-      fileUri: uploadedFile.uri,
-      uploadedAt: new Date().toISOString(),
-    };
   }
 
   async isUploadAvailable(ref: ProviderPdfUploadRef): Promise<boolean> {
@@ -116,15 +146,14 @@ class GeminiPdfUploadAdapter implements PdfUploadAdapter {
       await getGeminiClient().files.get({ name: `files/${fileName}` });
       return true;
     } catch (error: any) {
+      const status = getSafeErrorStatus(error);
       Zotero.debug(
-        `[Ask My Paper] Gemini uploaded PDF is unavailable: ${
-          error.message || String(error)
-        }`,
+        `[Ask My Paper] Gemini uploaded PDF is unavailable${status ? ` (status ${status})` : ""}.`,
       );
       if (isGeminiUnavailableUploadError(error)) {
         return false;
       }
-      throw error;
+      throw createSafeProviderError("Gemini file lookup", error);
     }
   }
 }
@@ -137,34 +166,24 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
     displayName: string,
   ): Promise<ProviderPdfUploadRef> {
     try {
-      Zotero.log(
-        `[Ask My Paper] OpenAI file upload started: ${displayName} (${filePath})`,
-      );
+      Zotero.log("[Ask My Paper] OpenAI file upload started.");
       const client = getOpenAIClient();
       const bytes = readBinaryFile(filePath);
       const uploadedFile = await client.files.create({
         file: createPdfFile(bytes, displayName),
         purpose: "user_data",
       });
-      Zotero.log(
-        `[Ask My Paper] OpenAI file upload succeeded: ${displayName} (${uploadedFile.id})`,
-      );
+      Zotero.log("[Ask My Paper] OpenAI file upload succeeded.");
       return {
         provider: "openai",
         fileId: uploadedFile.id,
         uploadedAt: new Date().toISOString(),
       };
     } catch (error: any) {
-      const errorMessage = error.message || String(error);
-      Zotero.log(
-        `[Ask My Paper] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
-      );
-      Zotero.logError(
-        new Error(
-          `[Ask My Paper] OpenAI file upload failed: ${displayName}: ${errorMessage}`,
-        ),
-      );
-      throw error;
+      const safeError = createSafeProviderError("OpenAI file upload", error);
+      Zotero.log(`[Ask My Paper] ${safeError.message}`);
+      Zotero.logError(safeError);
+      throw safeError;
     }
   }
 
@@ -174,15 +193,14 @@ class OpenAIPdfUploadAdapter implements PdfUploadAdapter {
       await getOpenAIClient().files.retrieve(ref.fileId);
       return true;
     } catch (error: any) {
+      const status = getSafeErrorStatus(error);
       Zotero.debug(
-        `[Ask My Paper] OpenAI uploaded PDF is unavailable: ${
-          error.message || String(error)
-        }`,
+        `[Ask My Paper] OpenAI uploaded PDF is unavailable${status ? ` (status ${status})` : ""}.`,
       );
       if (isMissingUploadError(error)) {
         return false;
       }
-      throw error;
+      throw createSafeProviderError("OpenAI file lookup", error);
     }
   }
 }
@@ -194,32 +212,38 @@ class AnthropicPdfUploadAdapter implements PdfUploadAdapter {
     filePath: string,
     displayName: string,
   ): Promise<ProviderPdfUploadRef> {
-    const apiKey = requireApiKey("anthropic");
-    const bytes = readBinaryFile(filePath);
-    const formData = new FormData();
-    formData.append("file", createPdfFile(bytes, displayName));
-    const response = await fetch(
-      "https://api.anthropic.com/v1/files?beta=true",
-      {
-        method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "files-api-2025-04-14",
-          "anthropic-dangerous-direct-browser-access": "true",
+    try {
+      const apiKey = requireApiKey("anthropic");
+      const bytes = readBinaryFile(filePath);
+      const formData = new FormData();
+      formData.append("file", createPdfFile(bytes, displayName));
+      const response = await fetch(
+        "https://api.anthropic.com/v1/files?beta=true",
+        {
+          method: "POST",
+          headers: {
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "files-api-2025-04-14",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: formData,
         },
-        body: formData,
-      },
-    );
-    if (!response.ok) {
-      throw new Error(await formatHttpError("Anthropic file upload", response));
+      );
+      if (!response.ok) {
+        throw createSafeProviderError("Anthropic file upload", {
+          status: response.status,
+        });
+      }
+      const uploadedFile = (await response.json()) as unknown as { id: string };
+      return {
+        provider: "anthropic",
+        fileId: uploadedFile.id,
+        uploadedAt: new Date().toISOString(),
+      };
+    } catch (error: any) {
+      throw createSafeProviderError("Anthropic file upload", error);
     }
-    const uploadedFile = (await response.json()) as unknown as { id: string };
-    return {
-      provider: "anthropic",
-      fileId: uploadedFile.id,
-      uploadedAt: new Date().toISOString(),
-    };
   }
 
   async isUploadAvailable(ref: ProviderPdfUploadRef): Promise<boolean> {
@@ -244,32 +268,20 @@ class AnthropicPdfUploadAdapter implements PdfUploadAdapter {
       if (response.status === 404) {
         return false;
       }
-      throw new Error(await formatHttpError("Anthropic file lookup", response));
+      throw createSafeProviderError("Anthropic file lookup", {
+        status: response.status,
+      });
     } catch (error: any) {
+      const status = getSafeErrorStatus(error);
       Zotero.debug(
-        `[Ask My Paper] Anthropic uploaded PDF is unavailable: ${
-          error.message || String(error)
-        }`,
+        `[Ask My Paper] Anthropic uploaded PDF is unavailable${status ? ` (status ${status})` : ""}.`,
       );
       if (isMissingUploadError(error)) {
         return false;
       }
-      throw error;
+      throw createSafeProviderError("Anthropic file lookup", error);
     }
   }
-}
-
-async function formatHttpError(
-  label: string,
-  response: Response,
-): Promise<string> {
-  let detail = "";
-  try {
-    detail = await response.text();
-  } catch (_e) {
-    detail = response.statusText;
-  }
-  return `${label} failed with ${response.status}: ${detail}`;
 }
 
 export function getPdfUploadAdapter(provider: ProviderId): PdfUploadAdapter {

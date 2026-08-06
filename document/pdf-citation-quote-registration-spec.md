@@ -3,13 +3,14 @@ title: "PDF Citation Quote Registration Specification"
 responsibility: "検索結果の本文からLLMが選んだ引用文字列を、元PDFの一意な位置へ登録するtool calling契約を定義する。"
 summary: "register_pdf_quoteは通常quoteだけで位置を確定し、PDF全文に同じquoteが複数ある場合だけfind_pdf_textのsource textを追加で受け取る。"
 created: "2026-07-28 08:43 UTC"
-updated: "2026-07-28 17:32 UTC"
+updated: "2026-07-29 04:49 UTC"
 workspace: "/home/nakamura/gemini-pdf"
 related_commit: "none"
 model: "gpt-5.6-sol"
 reasoning_effort: "medium"
 session: "019fa7ad-42be-7f70-a76e-7e1fe3e04ef8"
 handling: "document-workflow"
+stale: false
 ---
 
 # PDF Citation Quote Registration Specification
@@ -120,12 +121,12 @@ interface FindPdfTextArgs {
 }
 ```
 
-| field | 規則 |
-| --- | --- |
-| `libraryID` | PDF attachmentを所有するZotero library ID |
-| `attachmentKey` | PDF attachmentのZotero item key |
-| `query` | PDF本文から探す原文または原文に近い文字列 |
-| `normalize` | 省略時は `true` とし、検索時だけ空白、改行、ハイフネーション、Unicode表記の差を吸収する |
+| field           | 規則                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------- |
+| `libraryID`     | PDF attachmentを所有するZotero library ID                                               |
+| `attachmentKey` | PDF attachmentのZotero item key                                                         |
+| `query`         | PDF本文から探す原文または原文に近い文字列                                               |
+| `normalize`     | 省略時は `true` とし、検索時だけ空白、改行、ハイフネーション、Unicode表記の差を吸収する |
 
 `query` の最大長は2000 UTF-16 code unitsとする。
 検索結果は最大5件とする。
@@ -304,17 +305,17 @@ citation blockの表示本文とcanonical locatorはpluginが生成する。
 `register_pdf_quote` は検証に失敗したrangeを登録しない。
 失敗理由をtool errorとしてLLMへ返し、quoteの選び直しまたは検索のやり直しを促す。
 
-| 条件 | error |
-| --- | --- |
-| PDF本文が更新された | `PDF text changed after find_pdf_text. Search again.` |
-| source text省略時にquoteがPDF全文にない | `Quote was not found in the PDF text.` |
-| source text省略時にquoteがPDF全文に複数ある | `Quote occurs multiple times in the PDF text. Retry with the source text returned by find_pdf_text.` |
-| source textがPDF全文にない | `Source text was not found in the PDF text.` |
-| source textがPDF全文に複数ある | `Source text occurs multiple times in the PDF text. Use a longer source text.` |
-| quoteがsource textにない | `Quote is not an exact substring of the supplied source text.` |
-| quoteがsource textに複数回ある | `Quote occurs multiple times in the supplied source text. Use a narrower source or a longer exact quote.` |
-| quoteが空 | `Quote is empty.` |
-| quoteが長すぎる | `Quote exceeds the maximum citation length.` |
+| 条件                                        | error                                                                                                     |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| PDF本文が更新された                         | `PDF text changed after find_pdf_text. Search again.`                                                     |
+| source text省略時にquoteがPDF全文にない     | `Quote was not found in the PDF text.`                                                                    |
+| source text省略時にquoteがPDF全文に複数ある | `Quote occurs multiple times in the PDF text. Retry with the source text returned by find_pdf_text.`      |
+| source textがPDF全文にない                  | `Source text was not found in the PDF text.`                                                              |
+| source textがPDF全文に複数ある              | `Source text occurs multiple times in the PDF text. Use a longer source text.`                            |
+| quoteがsource textにない                    | `Quote is not an exact substring of the supplied source text.`                                            |
+| quoteがsource textに複数回ある              | `Quote occurs multiple times in the supplied source text. Use a narrower source or a longer exact quote.` |
+| quoteが空                                   | `Quote is empty.`                                                                                         |
+| quoteが長すぎる                             | `Quote exceeds the maximum citation length.`                                                              |
 
 quoteがPDF全文に複数回あることは、source textを追加する条件であり、quote自体を不必要に長くする条件ではない。
 quoteがsource textにも複数回ある場合だけ、別の `find_pdf_text` 結果を使うか、主張を直接支える範囲を保ったまま一意になる長さのquoteを選び直す。
@@ -358,10 +359,10 @@ providerが特定toolの強制をサポートする場合、最初のroundで `f
 
 ### Referenced File Hashes
 
-- `addon/prefs.js`: `sha256:feace5630e578488855859de55f450f28d5dd6adcd741ee2e6cede9cba87995e`
-- `docs/pdf_citation_format.md`: `sha256:aca2a325035b1a9d8fd002efa2a353f9547b935d9ea137de12512a83b2af0cd4`
-- `document/pdf-citation-requirements.md`: `sha256:43837ead062bede81768e60e232d31b5d255a8249a9870961cd9a8e4d4ba039e`
-- `src/modules/llm/chat.ts`: `sha256:08e06bcf64621b1bca2fdeaba73237950317208b0eb8f9a85e433d1b5a70a392`
-- `src/modules/pdfCitation.ts`: `sha256:b00f6ac9e362469811940995190d1fcb3ac5e2713dfc43cb3ecb2bb91dc47391`
-- `test/llmChatToolLoop.test.ts`: `sha256:5a30e3d5a520b4e94cb1f4a479149fcbc502a5d9800fb1d6289774e04e9aeedb`
-- `test/pdfCitation.test.ts`: `sha256:33a944beb2b68f64adff20d82b5bef5e5990b2b8446d5ea2225ecc6289f4195e`
+- `addon/prefs.js`: `sha256:5399b86bfa619effeecedccfb5fbfb2b3056c9c2d59e3206f32a1c5988265ad5`
+- `docs/pdf_citation_format.md`: `sha256:27c0c3fdaa473e49ba9b6020087586d9e41880ba8e180bfadaa65519d602e64e`
+- `document/pdf-citation-requirements.md`: `sha256:9e4a4a232e76df06df6acf25db8c794ca5096de74f4bd9718d4cd60fa68cfb27`
+- `src/modules/llm/chat.ts`: `sha256:92b4cf442fb775c6929c34550e527a88c92c5e9e81f7f3c12122afbe7e765fe2`
+- `src/modules/pdfCitation.ts`: `sha256:08f77bd09a99787ff49133258eb9c41c42c4c9fecf7569c700cd1ca96d5bc377`
+- `test/llmChatToolLoop.test.ts`: `sha256:b165898f215fcfd0a1d12787a88e05f74392b97d33a59d705f23f82da491735c`
+- `test/pdfCitation.test.ts`: `sha256:7a2e24b60345aba0ca099d459eff9bd988288bb3bb520de970e1fe020cc76f2f`

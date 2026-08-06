@@ -34,12 +34,13 @@ import {
   summarizePdfCitationToolCall,
 } from "../pdfCitation";
 import { renderPdfCitationDisplayText } from "./citationRenderService";
+import { normalizeAssistantMarkdown } from "./assistantMarkdown";
 
 const PDF_CITATION_FINALIZATION_PROMPT = [
   "The PDF citation tool round limit has been reached.",
   "Do not call any more tools.",
   "Answer the user's question now using only the tool results already provided.",
-  'When citing PDF evidence, use only rangeId values already returned by read_pdf_text_range in empty blocks such as ::: citation {"rangeId":"r_7k9p2x4q"}\n:::.',
+  'When citing PDF evidence, use only rangeId values already returned by register_pdf_quote in empty blocks such as ::: citation {"rangeId":"r_7k9p2x4q"}\n:::.',
 ].join("\n");
 
 export interface LlmChatResponse {
@@ -57,6 +58,98 @@ interface SendMessageOptions {
   modelName?: string;
   metadata?: ParentItemFileMetadata;
   policy?: Partial<LlmRequestPolicy>;
+}
+
+type PdfCitationTool = {
+  name: string;
+  invoke(args: unknown): Promise<unknown>;
+};
+
+const PDF_CITATION_RENDER_FAILURE_WARNING =
+  "PDF citation display rendering failed. The citation was removed.";
+const PDF_CITATION_TOOL_RETRY_MESSAGE =
+  "PDF citation tool request could not be completed. Check the current PDF citation context and retry.";
+const PDF_ATTACHMENT_TEXT_UNAVAILABLE_MESSAGE =
+  "PDF attachment text is unavailable. Choose another attachment or retry after its text is available.";
+
+const LOCAL_PDF_CITATION_TOOL_ERROR_MESSAGES = new Set([
+  "PDF citation attachment is not available in this request.",
+  "Quote is empty.",
+  "Quote exceeds the maximum citation length.",
+  "Quote was not found in the PDF text.",
+  "Quote occurs multiple times in the PDF text. Retry with the source text returned by find_pdf_text.",
+  "Source text was not found in the PDF text.",
+  "Source text occurs multiple times in the PDF text. Use a longer source text.",
+  "Quote is not an exact substring of the supplied source text.",
+  "Quote occurs multiple times in the supplied source text. Use a narrower source or a longer exact quote.",
+  "PDF text changed after find_pdf_text. Search again.",
+  "Registered quote does not match the PDF text.",
+]);
+
+function getPdfCitationToolFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (LOCAL_PDF_CITATION_TOOL_ERROR_MESSAGES.has(message)) {
+    return message;
+  }
+  if (
+    message.startsWith("PDF attachment not found:") ||
+    message.startsWith("Item is not an attachment:") ||
+    message.startsWith("Zotero attachmentText is empty:")
+  ) {
+    return PDF_ATTACHMENT_TEXT_UNAVAILABLE_MESSAGE;
+  }
+  return PDF_CITATION_TOOL_RETRY_MESSAGE;
+}
+
+export async function renderPdfCitationDisplayTextForNormalization(
+  input: Parameters<typeof renderPdfCitationDisplayText>[0],
+  renderDisplayText: typeof renderPdfCitationDisplayText = renderPdfCitationDisplayText,
+): ReturnType<typeof renderPdfCitationDisplayText> {
+  try {
+    return await renderDisplayText(input);
+  } catch (_error) {
+    throw new Error(PDF_CITATION_RENDER_FAILURE_WARNING);
+  }
+}
+
+function isAllowedCitationAttachment(
+  args: unknown,
+  allowedAttachments: Set<string>,
+): boolean {
+  if (!args || typeof args !== "object") return false;
+  const { libraryID, attachmentKey } = args as Record<string, unknown>;
+  return (
+    typeof libraryID === "number" &&
+    typeof attachmentKey === "string" &&
+    allowedAttachments.has(`${libraryID}:${attachmentKey}`)
+  );
+}
+
+export function scopePdfCitationTools(
+  tools: PdfCitationTool[],
+  files: ParentItemFileMetadata["files"] | undefined,
+): PdfCitationTool[] {
+  const allowedAttachments = new Set(
+    (files || [])
+      .filter(
+        (file) =>
+          typeof file.libraryID === "number" &&
+          Boolean(file.zoteroAttachmentKey),
+      )
+      .map((file) => `${file.libraryID}:${file.zoteroAttachmentKey}`),
+  );
+  return tools.map((tool) => {
+    const scopedTool = Object.create(tool) as PdfCitationTool;
+    scopedTool.invoke = async (args: unknown) => {
+      if (!isAllowedCitationAttachment(args, allowedAttachments)) {
+        throw new Error(
+          "PDF citation attachment is not available in this request.",
+        );
+      }
+      return tool.invoke(args);
+    };
+    return scopedTool;
+  });
 }
 
 async function buildMessages(
@@ -291,7 +384,7 @@ export async function invokeWithPdfCitationTools(
   const maxToolCalls = 20;
 
   for (let round = 0; round < maxRounds; round++) {
-    const toolChoice = "auto";
+    const toolChoice = round === 0 ? "find_pdf_text" : "auto";
     const modelWithTools = chatModel.bindTools(boundTools, {
       tool_choice: toolChoice,
     });
@@ -372,11 +465,10 @@ export async function invokeWithPdfCitationTools(
             status: "success",
           }),
         );
-      } catch (error: any) {
+      } catch (error) {
+        const errorMessage = getPdfCitationToolFailureMessage(error);
         Zotero.logError(
-          new Error(
-            `[Ask My Paper] PDF citation tool failed: ${toolName}: ${error.message || String(error)}`,
-          ),
+          new Error(`[Ask My Paper] PDF citation tool failed: ${toolName}.`),
         );
         pdfCitationToolCalls.push(
           summarizePdfCitationToolCall({
@@ -384,12 +476,12 @@ export async function invokeWithPdfCitationTools(
             toolName,
             args: toolCall.args || {},
             status: "error",
-            error,
+            error: errorMessage,
           }),
         );
         workingMessages.push(
           new ToolMessage({
-            content: `PDF citation tool failed: ${error.message || String(error)}`,
+            content: errorMessage,
             name: toolName,
             tool_call_id: toolCallId,
             status: "error",
@@ -438,11 +530,15 @@ export async function sendMessageToLlm(
   const adapter = getChatProviderAdapter(provider);
   const policy = { ...getRequestPolicy(), ...options.policy };
   const rangeRegistry = new PdfCitationRangeRegistry();
-  const citationTools = (options.metadata?.files || []).some(
-    (file) => typeof file.libraryID === "number",
-  )
-    ? createPdfCitationTools({ rangeRegistry })
-    : [];
+  const citationTools = scopePdfCitationTools(
+    (options.metadata?.files || []).some(
+      (file) =>
+        typeof file.libraryID === "number" && Boolean(file.zoteroAttachmentKey),
+    )
+      ? createPdfCitationTools({ rangeRegistry })
+      : [],
+    options.metadata?.files,
+  );
   const effectivePolicy =
     provider === "gemini" && citationTools.length > 0 && policy.useWebSearch
       ? { ...policy, useWebSearch: false }
@@ -476,13 +572,15 @@ export async function sendMessageToLlm(
   let citationRenderProvider: string | undefined;
   let citationRenderModel: string | undefined;
   const normalizedCitations = await normalizePdfCitationBlocks(
-    stripThoughtsFromText(extractText(response), thoughts),
+    normalizeAssistantMarkdown(
+      stripThoughtsFromText(extractText(response), thoughts),
+    ),
     {
       allowCitationBlocks: citationTools.length === 0 || localToolCallCount > 0,
       pdfFiles: options.metadata?.files,
       rangeRegistry,
       renderDisplayText: async (input) => {
-        const rendered = await renderPdfCitationDisplayText({
+        const rendered = await renderPdfCitationDisplayTextForNormalization({
           rawText: input.rawText,
           pdfFile: input.pdfFile,
         });

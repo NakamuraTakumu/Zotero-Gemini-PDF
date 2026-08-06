@@ -17,7 +17,7 @@ export class ChatSessionRepository {
     const migratedSessions =
       await this.loadAndDeletePerSessionAttachments(parentItem);
 
-    const chatSessions = parentData.chatSessions;
+    let chatSessions = parentData.chatSessions;
     let changed = false;
 
     for (const migratedSession of migratedSessions) {
@@ -34,8 +34,25 @@ export class ChatSessionRepository {
     }
 
     if (changed) {
-      parentData.chatSessions = chatSessions;
-      await this.parentItemDataRepository.save(parentItem, parentData);
+      chatSessions = await this.parentItemDataRepository.update(
+        parentItem,
+        (latestParentData) => {
+          for (const migratedSession of migratedSessions) {
+            const existingSessionIndex =
+              latestParentData.chatSessions.findIndex(
+                (session) =>
+                  session.metadata.chatId === migratedSession.metadata.chatId,
+              );
+            if (existingSessionIndex >= 0) {
+              latestParentData.chatSessions[existingSessionIndex] =
+                migratedSession;
+            } else {
+              latestParentData.chatSessions.push(migratedSession);
+            }
+          }
+          return latestParentData.chatSessions;
+        },
+      );
     }
 
     Zotero.log(
@@ -48,28 +65,24 @@ export class ChatSessionRepository {
     parentItem: Zotero.Item,
     history: ChatSessionHistory,
   ): Promise<void> {
-    const parentData = await this.parentItemDataRepository.load(parentItem);
-    const sessionIndex = parentData.chatSessions.findIndex(
-      (session) => session.metadata.chatId === history.metadata.chatId,
-    );
-    if (sessionIndex >= 0) {
-      parentData.chatSessions[sessionIndex] = history;
-    } else {
-      parentData.chatSessions.push(history);
-    }
-    await this.parentItemDataRepository.save(parentItem, parentData);
+    await this.parentItemDataRepository.update(parentItem, (parentData) => {
+      const sessionIndex = parentData.chatSessions.findIndex(
+        (session) => session.metadata.chatId === history.metadata.chatId,
+      );
+      if (sessionIndex >= 0) {
+        parentData.chatSessions[sessionIndex] = history;
+      } else {
+        parentData.chatSessions.push(history);
+      }
+    });
   }
 
   async deleteSession(parentItem: Zotero.Item, chatId: string): Promise<void> {
-    const parentData = await this.parentItemDataRepository.load(parentItem);
-    const initialLength = parentData.chatSessions.length;
-    parentData.chatSessions = parentData.chatSessions.filter(
-      (session) => session.metadata.chatId !== chatId,
-    );
-
-    if (parentData.chatSessions.length !== initialLength) {
-      await this.parentItemDataRepository.save(parentItem, parentData);
-    }
+    await this.parentItemDataRepository.update(parentItem, (parentData) => {
+      parentData.chatSessions = parentData.chatSessions.filter(
+        (session) => session.metadata.chatId !== chatId,
+      );
+    });
     Zotero.debug(
       `[ChatSessionRepository] Deleted chat session from parent store: ${chatId}`,
     );
@@ -106,12 +119,10 @@ export class ChatSessionRepository {
         Zotero.debug(
           `[ChatSessionRepository] Migrated and deleted per-session chat attachment ${attachment.key}.`,
         );
-      } catch (e: any) {
+      } catch {
         Zotero.logError(
           new Error(
-            `[ChatSessionRepository] Failed to migrate conversation attachment ${attachment.key}: ${
-              e.message || String(e)
-            }`,
+            "[ChatSessionRepository] Failed to migrate a conversation attachment.",
           ),
         );
       }

@@ -1,3 +1,18 @@
+---
+title: "PDF Citation Range ID Plan"
+responsibility: "rangeId方式の初期仕様と実装計画を、当時のPDF citation実装に基づいて記録する。"
+summary: "rangeIdとcanonical locatorの境界は採用されたが、read rangeをLLMへ選ばせる部分はquote登録方式に置き換えられた。"
+created: "2026-06-18 11:14 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "e0e5de71b118585f66bb71b18812a3eaaf052d3b"
+model: "gpt-5.5"
+reasoning_effort: "medium"
+session: "019eda6f-ee97-7fe2-8652-12fd873bf9e5"
+handling: "document-workflow"
+stale: true
+---
+
 # PDF Citation Range ID Plan
 
 - Created: 2026-06-18 11:14 UTC

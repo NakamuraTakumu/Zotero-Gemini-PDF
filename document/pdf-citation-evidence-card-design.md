@@ -3,13 +3,14 @@ title: "PDF Citation Evidence Card Design"
 responsibility: "PDF citation要件を満たすための解決方式と、実装前に確定すべき契約を提案する。"
 summary: "pluginが完全な根拠単位をEvidenceCardとして確定し、LLMは主張とevidenceIdだけを対応付ける方式を提案する。"
 created: "2026-07-28 07:46 UTC"
-updated: "2026-07-28 07:46 UTC"
+updated: "2026-07-29 04:48 UTC"
 workspace: "/home/nakamura/gemini-pdf"
 related_commit: "none"
 model: "gpt-5.6-sol"
 reasoning_effort: "medium"
 session: "019fa7ad-42be-7f70-a76e-7e1fe3e04ef8"
 handling: "document-workflow"
+stale: true
 ---
 
 # PDF Citation Evidence Card Design
@@ -199,13 +200,13 @@ token単位の低遅延表示よりcitationの完全性を優先する。
 
 ### 代替案の評価
 
-| 方式 | 改善する問題 | 残る破綻 | 判断 |
-| --- | --- | --- | --- |
-| 現行 `rangeId` の強化 | 未登録locator、offsetの範囲外指定 | LLMによる不適切な範囲選択、主張との誤対応 | 採用しない |
-| 文境界へのsnap | 文途中の切断 | 誤った位置、過大な範囲、表や段組の境界 | 補助処理としてだけ使う |
-| quoteと曖昧検索 | offsetの直接生成 | 重複表現、OCR差、短すぎるquote、誤ったquote | card検索の内部処理としてだけ使う |
-| tool call位置からのcitation注入 | citationの表示位置 | locatorと主張の正しさ、provider横断のordered content | 主方式にしない |
-| EvidenceCard | locator所有、完全単位、主張対応、永続化 | retrieval漏れ、意味的な過剰一般化 | 提案方式 |
+| 方式                            | 改善する問題                            | 残る破綻                                             | 判断                             |
+| ------------------------------- | --------------------------------------- | ---------------------------------------------------- | -------------------------------- |
+| 現行 `rangeId` の強化           | 未登録locator、offsetの範囲外指定       | LLMによる不適切な範囲選択、主張との誤対応            | 採用しない                       |
+| 文境界へのsnap                  | 文途中の切断                            | 誤った位置、過大な範囲、表や段組の境界               | 補助処理としてだけ使う           |
+| quoteと曖昧検索                 | offsetの直接生成                        | 重複表現、OCR差、短すぎるquote、誤ったquote          | card検索の内部処理としてだけ使う |
+| tool call位置からのcitation注入 | citationの表示位置                      | locatorと主張の正しさ、provider横断のordered content | 主方式にしない                   |
+| EvidenceCard                    | locator所有、完全単位、主張対応、永続化 | retrieval漏れ、意味的な過剰一般化                    | 提案方式                         |
 
 tool call位置の復元案は、citationを表示する場所と根拠範囲を決める処理を結合する。
 EvidenceCard方式では回答unitが表示位置を持つため、このprovider固有処理を必須にしない。

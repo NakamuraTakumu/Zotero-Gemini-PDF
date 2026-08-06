@@ -7,6 +7,8 @@ This document details the JSON formats used for persisting Ask My Paper data wit
 
 PDF citation block syntax is specified separately in `docs/pdf_citation_format.md`.
 
+Assistant content is stored after canonical Markdown normalization: outside fenced code blocks, line-leading blockquote markers (`>`, including repeated or indented markers) are removed before citation parsing and persistence. Fenced-code contents, non-leading/in-sentence `>`, CRLF line endings, and `::: citation` syntax are otherwise preserved.
+
 ## 1. Parent Item Data Format
 
 This JSON attachment (e.g., named `Ask My Paper Data - [ParentItemKey].json`) is unique to each Zotero parent item and centralizes metadata for all its associated PDF attachments and chat sessions.

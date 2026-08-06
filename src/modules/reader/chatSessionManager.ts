@@ -46,9 +46,9 @@ export class ChatSessionManager {
       // No need to call _triggerTitleGenerationForAllSessions here directly,
       // as generateTitle will be called by ChatSession after first exchange,
       // and global event handler will update UI.
-    } catch (e: any) {
+    } catch {
       Zotero.logError(
-        new Error(`Error loading all conversations: ${e.message || String(e)}`),
+        new Error("[ChatSessionManager] Error loading conversations."),
       );
     }
 
@@ -69,9 +69,7 @@ export class ChatSessionManager {
       this._handleGlobalSessionUpdated,
     );
 
-    Zotero.debug(
-      `[ChatSessionManager] Initialized with active session: ${this._activeSessionId}`,
-    );
+    Zotero.debug("[ChatSessionManager] Initialized.");
   }
 
   /**
@@ -94,9 +92,7 @@ export class ChatSessionManager {
     session: ChatSession;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(
-        `[ChatSessionManager] _handleGlobalSessionAdded: Session ${event.session.id} ("${event.session.title}") added.`,
-      );
+      Zotero.debug("[ChatSessionManager] Session added.");
       // If no active session, make the newly added one active
       if (!this._activeSessionId) {
         this.switchSession(event.session.id);
@@ -111,9 +107,7 @@ export class ChatSessionManager {
     sessionId: string;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(
-        `[ChatSessionManager] _handleGlobalSessionDeleted: Session ${event.sessionId} deleted.`,
-      );
+      Zotero.debug("[ChatSessionManager] Session deleted.");
       this.rerenderSwitcher(); // スイッチャーの再描画
 
       // 削除されたセッションがアクティブだった場合、新しいアクティブセッションを設定
@@ -141,13 +135,7 @@ export class ChatSessionManager {
     session: ChatSession;
   }) => {
     if (event.itemKey === this._itemKey) {
-      Zotero.debug(
-        `[ChatSessionManager] _handleGlobalSessionUpdated: Session ${event.session.id} ("${event.session.title}") updated.`,
-      );
-      const allSessions = this.getAllSessions();
-      Zotero.debug(
-        `[ChatSessionManager] _handleGlobalSessionUpdated: All sessions for item ${this._itemKey}: ${allSessions.map((s) => `"${s.title}"`).join(", ")}`,
-      );
+      Zotero.debug("[ChatSessionManager] Session updated.");
 
       // If the updated session is the active one, re-render chat messages
       if (this._activeSessionId === event.session.id) {
@@ -160,15 +148,8 @@ export class ChatSessionManager {
   private async _initializeActiveSession(): Promise<void> {
     const sessions = this.globalChatManager.getAllSessions(this._itemKey);
     Zotero.debug(
-      `[ChatSessionManager] _initializeActiveSession: Found ${sessions.length} sessions for item ${this._itemKey}.`,
+      `[ChatSessionManager] _initializeActiveSession: Found ${sessions.length} sessions.`,
     );
-    if (sessions.length > 0) {
-      sessions.forEach((s) =>
-        Zotero.debug(
-          `[ChatSessionManager] _initializeActiveSession: Existing session: ID=${s.id}, Title="${s.title}", Created=${s.history.metadata.createdTimestamp}`,
-        ),
-      );
-    }
 
     if (sessions.length === 0) {
       Zotero.debug(
@@ -176,9 +157,7 @@ export class ChatSessionManager {
       );
       const newSession = await this.createSession();
       this._activeSessionId = newSession.id;
-      Zotero.debug(
-        `[ChatSessionManager] _initializeActiveSession: Created new session ID: ${newSession.id}`,
-      );
+      Zotero.debug("[ChatSessionManager] Created a new session.");
     } else {
       // Otherwise, find the most recent session and activate it.
       const latestSession = sessions.sort((a, b) => {
@@ -187,13 +166,9 @@ export class ChatSessionManager {
         return dateB.getTime() - dateA.getTime();
       })[0];
       this._activeSessionId = latestSession.id;
-      Zotero.debug(
-        `[ChatSessionManager] _initializeActiveSession: Activated latest session ID: ${latestSession.id}, Title: "${latestSession.title}"`,
-      );
+      Zotero.debug("[ChatSessionManager] Activated the latest session.");
     }
-    Zotero.debug(
-      `[ChatSessionManager] _initializeActiveSession: Final active session ID set to: ${this._activeSessionId}`,
-    );
+    Zotero.debug("[ChatSessionManager] Active session initialized.");
   }
 
   /**
@@ -206,15 +181,11 @@ export class ChatSessionManager {
       this._activeSessionId = chatId; // Update local active session ID
       this.rerenderChatMessages(sessionToActivate);
       this.rerenderSwitcher();
-      Zotero.debug(
-        `[ChatSessionManager] Switched active session to: ${chatId}`,
-      );
+      Zotero.debug("[ChatSessionManager] Switched active session.");
       return sessionToActivate;
     }
     Zotero.logError(
-      new Error(
-        `[ChatSessionManager] Could not find session with ID: ${chatId} to switch to.`,
-      ),
+      new Error("[ChatSessionManager] Could not find the requested session."),
     );
     return null;
   }
@@ -229,9 +200,7 @@ export class ChatSessionManager {
     const activeSession = this.globalChatManager
       .getAllSessions(this._itemKey)
       .find((s) => s.id === this._activeSessionId);
-    Zotero.log(
-      `[Ask My Paper] ChatSessionManager.getActiveSession: Returning session ID: ${activeSession?.id}, Title: "${activeSession?.title}"`,
-    );
+    Zotero.debug("[ChatSessionManager] Retrieved active session.");
     return activeSession || null;
   }
 
@@ -275,20 +244,13 @@ export class ChatSessionManager {
       return false;
     }
 
-    const chatIdToDelete = activeSession.id;
-
     try {
       await this.globalChatManager.deleteSession(activeSession);
-      this._activeSessionId = null; // アクティブセッションIDをリセット
-      // The global event handler _handleGlobalSessionDeleted will update _activeSessionId and rerender.
+      // The session-deleted handler is the sole owner of the active-ID transition.
       return true;
-    } catch (e: any) {
+    } catch {
       Zotero.logError(
-        new Error(
-          `[ChatSessionManager] Error deleting active session ${chatIdToDelete}: ${
-            e.message || String(e)
-          }`,
-        ),
+        new Error("[ChatSessionManager] Error deleting active session."),
       );
       return false;
     }

@@ -1,3 +1,18 @@
+---
+title: "PDF Citation Live Test"
+responsibility: "offsetをLLMが選ぶ旧PDF citation方式について、Zotero UIでのlive test結果を記録する。"
+summary: "表示と保存は成功したがlocator精度が不合格だった旧方式の検証記録であり、quote登録方式の検証には使用しない。"
+created: "2026-06-06 02:20 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "low"
+session: "019e970b-9398-7723-bc6d-705e97b2012f"
+handling: "document-workflow"
+stale: true
+---
+
 # PDF Citation Live Test
 
 - Created: 2026-06-06 02:20 UTC

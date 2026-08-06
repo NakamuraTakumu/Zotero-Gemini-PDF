@@ -3,13 +3,14 @@ title: "PDF Citation Requirements"
 responsibility: "PDF citation機能に対するユーザー要求と制約を、実装方式から分離して定義する。"
 summary: "PDFに基づく回答の根拠を検証可能にし、根拠範囲の正確性、根拠情報の追跡可能性、実行環境への適応性を要求する。"
 created: "2026-07-28 07:29 UTC"
-updated: "2026-07-28 07:41 UTC"
+updated: "2026-07-29 04:49 UTC"
 workspace: "/home/nakamura/gemini-pdf"
 related_commit: "none"
 model: "gpt-5.6-sol"
 reasoning_effort: "low"
 session: "019fa79d-0f3d-76d2-a5d1-3d1339aa3c5c"
 handling: "document-workflow"
+stale: false
 ---
 
 # PDF Citation Requirements
@@ -36,7 +37,6 @@ handling: "document-workflow"
 - [情報保持要求](#情報保持要求)
 - [適応性要求](#適応性要求)
 - [実装方式の境界](#実装方式の境界)
-- [Referenced File Hashes](#referenced-file-hashes)
 
 ### 目的
 
@@ -75,7 +75,3 @@ PDFに基づく回答の信頼性を、ユーザーが根拠箇所を確認す�
 
 内部処理には、LLMによる生成、外部処理の呼び出し、検索、照合などを使用してよい。
 ただし、採用する実装方式によって、本文書に定めた機能、品質、情報保持、適応性の要求を弱めてはならない。
-
-### Referenced File Hashes
-
-- `document/pdf-citation-tool-call-position.md`: `sha256:5230b362c1f5e1d34654b5e927d92be48810a128b524433f44f8261e69816857`

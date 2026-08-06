@@ -8,14 +8,13 @@ import {
   PREF_CITATION_RENDER_PROMPT,
 } from "../../utils/constants";
 import { getPref } from "../../utils/prefs";
-import {
-  DEFAULT_CITATION_RENDER_MODEL,
-} from "../../utils/providerConfig";
-import { getCitationRenderProvider } from "./provider";
+import { getProviderConfig } from "../../utils/providerConfig";
+import { getCitationRenderProvider, getProviderModelList } from "./provider";
 import { getChatProviderAdapter } from "./chatProviderAdapters";
 import type {
   ParentItemFileMetadata,
   ParentItemFileMetadataFile,
+  ProviderId,
 } from "../../types/chat";
 
 export interface CitationRenderInput {
@@ -24,6 +23,24 @@ export interface CitationRenderInput {
 }
 
 const MAX_RENDER_OUTPUT_CHARS = 1200;
+
+export function resolveCitationRenderModel(
+  provider: ProviderId,
+  configuredModel: string,
+  availableModels = getProviderModelList(provider),
+): string {
+  const model = configuredModel.trim();
+  if (model && availableModels.includes(model)) {
+    return model;
+  }
+
+  const defaultModel = getProviderConfig(provider).defaultTitleModel;
+  if (availableModels.includes(defaultModel)) {
+    return defaultModel;
+  }
+
+  return availableModels[0] || defaultModel;
+}
 
 function extractText(message: AIMessage): string {
   const contentBlocks = (message as any).contentBlocks;
@@ -88,9 +105,10 @@ export async function renderPdfCitationDisplayText(
   displayText: string;
 }> {
   const provider = getCitationRenderProvider();
-  const model =
-    ((getPref(PREF_CITATION_RENDER_MODEL) as string) || "").trim() ||
-    DEFAULT_CITATION_RENDER_MODEL;
+  const model = resolveCitationRenderModel(
+    provider,
+    (getPref(PREF_CITATION_RENDER_MODEL) as string) || "",
+  );
   const prompt = (
     (getPref(PREF_CITATION_RENDER_PROMPT) as string) || ""
   ).trim();

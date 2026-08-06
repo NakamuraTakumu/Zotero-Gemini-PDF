@@ -1,7 +1,6 @@
 import { ReaderItemPaneFactory } from "./modules/readerItemPane";
 import { registerPrefsScripts } from "./modules/preferenceScript"; // Import the preference script
 import { initLocale } from "./utils/locale";
-import { createZToolkit } from "./utils/ztoolkit";
 import { buildReaderPopup } from "./modules/readerPopup";
 import { migrateProviderPrefs } from "./utils/prefMigration";
 
@@ -11,11 +10,6 @@ async function onStartup() {
     Zotero.unlockPromise,
     Zotero.uiReadyPromise,
   ]);
-
-  // Define a global debug function for testing clicks
-  _globalThis.askMyPaperDebugClick = () => {
-    Zotero.log("[Ask My Paper] Global debug click fired!");
-  };
 
   initLocale();
   migrateProviderPrefs();
@@ -55,9 +49,6 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
-  // Create ztoolkit for every window
-  addon.data.ztoolkit = createZToolkit();
-
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
@@ -67,7 +58,9 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
-  ztoolkit.unregisterAll();
+  // `addon.data.ztoolkit` is owned by the add-on, not by an individual main
+  // window. Destroying it here would unregister resources still used by other
+  // open windows. Window-owned DOM resources are released with their window.
 }
 
 function onShutdown(): void {

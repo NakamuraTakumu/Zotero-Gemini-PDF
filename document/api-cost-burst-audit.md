@@ -1,3 +1,18 @@
+---
+title: "API Cost Burst Audit"
+responsibility: "APIリクエスト増加につながるreaderとLLMの経路、および当時の抑止修正を記録する。"
+summary: "重複送信、PDF再upload、title generationによる有限回の多重化を抑止した2026年5月時点の監査記録であり、現在のlifecycle実装にはそのまま適用しない。"
+created: "2026-05-20 05:38 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "high"
+session: "019e43df-137b-74c3-8db0-d5844d53e6e4"
+handling: "document-workflow"
+stale: true
+---
+
 # API Cost Burst Audit
 
 - Created: 2026-05-20 05:38 UTC

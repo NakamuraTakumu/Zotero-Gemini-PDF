@@ -77,14 +77,14 @@ describe("LLM history PDF citation adapter", function () {
     const stored = new AIMessage({
       content: "No response.",
       additional_kwargs: {
-        function_call: { name: "read_pdf_text_range", arguments: "{}" },
+        function_call: { name: "register_pdf_quote", arguments: "{}" },
         __openai_function_call_ids__: {
           call_1: "fc_1",
         },
       },
       tool_calls: [
         {
-          name: "read_pdf_text_range",
+          name: "register_pdf_quote",
           args: { libraryID: 1, attachmentKey: "ATTACH1" },
           id: "call_1",
           type: "tool_call",
@@ -92,7 +92,7 @@ describe("LLM history PDF citation adapter", function () {
       ],
       invalid_tool_calls: [
         {
-          name: "read_pdf_text_range",
+          name: "register_pdf_quote",
           args: "{}",
           id: "bad_call_1",
           error: "bad args",

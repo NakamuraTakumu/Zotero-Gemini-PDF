@@ -1,3 +1,18 @@
+---
+title: "Chat Rendering XHTML Sanitizer"
+responsibility: "chat renderingでXHTML再parseを避けるsanitizer境界と、その検証結果を記録する。"
+summary: "DOMPurifyが返すDocumentFragmentをreplaceChildrenで挿入し、Markdown、citation、KaTeXをXHTML文書で安全に表示する。"
+created: "2026-06-05 13:16 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "high"
+session: "019e970b-9398-7723-bc6d-705e97b2012f"
+handling: "document-workflow"
+stale: false
+---
+
 # Chat Rendering XHTML Sanitizer
 
 - Created: 2026-06-05 13:16 UTC
@@ -34,8 +49,7 @@ Xpra screenshot は HTML client 切断後に stale backing store を表示する
 
 ### Referenced File Hashes
 
-- `addon/content/chat.css`: `sha256:a0236484a3afc48d17ddccf4f5a279ed2fde6cffad905e9dc1efcab626817032`
-- `src/modules/reader/ui.ts`: `sha256:ea6e43e933d97e19395b48890bf1f50e3b8acf6ac0e53e91fef6d4f361bf684c`
+- `addon/content/chat.css`: `sha256:72b944a081109739480254512d3841c6c8a4bfeccdb701976167174fd7aa18e9`
+- `src/modules/reader/ui.ts`: `sha256:bbfb75e72f072d543dbfb07bddb1df571c8732c50da0e7a61e4cff820976b5a2`
 
 ## References
-

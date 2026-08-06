@@ -21,13 +21,16 @@
   },
   "homepage": "https://github.com/NakamuraTakumu/Zotero-Gemini-PDF#readme",
   "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=22.8.0"
+  },
   "scripts": {
     "start": "zotero-plugin serve",
     "build": "tsc --noEmit && zotero-plugin build",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
-    "test": "zotero-plugin test",
+    "test": "node test/run.mjs",
     "update-deps": "npm update --save"
   },
   "dependencies": {
@@ -60,6 +63,7 @@
     "mocha": "^11.7.1",
     "prettier": "^3.6.2",
     "ts-loader": "^9.5.4",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.2",
     "webpack": "^5.102.1",
     "webpack-cli": "^6.0.1",

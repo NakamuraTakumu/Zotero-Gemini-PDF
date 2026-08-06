@@ -17,6 +17,45 @@ interface SendMessageUseCaseDependencies {
   pdfFileSyncManager: PdfFileSyncManager;
 }
 
+function isCurrentPdfAttachment(attachment: Zotero.Item): boolean {
+  return (
+    (attachment.attachmentContentType === "application/pdf" ||
+      attachment.attachmentContentType === "application/x-pdf") &&
+    Boolean(attachment.attachmentPath)
+  );
+}
+
+export async function filterRequestPdfMetadata(
+  parentItem: Zotero.Item,
+  metadata: ParentItemFileMetadata,
+): Promise<ParentItemFileMetadata> {
+  const childAttachmentIds = parentItem.getAttachments(false);
+  const childAttachments = await Zotero.Items.getAsync(childAttachmentIds);
+  const currentPdfAttachments = new Set(
+    childAttachments
+      .filter(isCurrentPdfAttachment)
+      .map((attachment) => `${attachment.libraryID}:${attachment.key}`),
+  );
+
+  return {
+    ...metadata,
+    files: metadata.files.filter(
+      (file) =>
+        typeof file.libraryID === "number" &&
+        currentPdfAttachments.has(
+          `${file.libraryID}:${file.zoteroAttachmentKey}`,
+        ),
+    ),
+  };
+}
+
+function getSafeRequestErrorMessage(error: any): string {
+  const status = error?.status || error?.statusCode;
+  return typeof status === "number" || typeof status === "string"
+    ? `Language model request failed with status ${status}.`
+    : "Language model request failed.";
+}
+
 export class SendMessageUseCase {
   private static inFlightSessionKeys = new Set<string>();
 
@@ -27,7 +66,7 @@ export class SendMessageUseCase {
     promptText: string,
   ): Promise<ParentItemFileMetadata | null> {
     Zotero.log(
-      `[Ask My Paper] SendMessageUseCase.execute called. messageText: "${messageText}", promptText: "${promptText}"`,
+      `[Ask My Paper] SendMessageUseCase.execute called. messageLength=${messageText.length}, promptLength=${promptText.length}`,
     );
 
     if (messageText.trim() === "") {
@@ -64,6 +103,12 @@ export class SendMessageUseCase {
     SendMessageUseCase.inFlightSessionKeys.add(inFlightSessionKey);
     this.setRequestInProgress(true);
 
+    // The session selected when send starts owns all persistence for this
+    // request. The selector may change while the request is in flight, so UI
+    // updates must only target the originating session's rendered view.
+    const isOriginSessionActive = (): boolean =>
+      this.deps.chatSessionManager.getActiveSession()?.id === activeSession.id;
+
     let parentItemFileMetadata: ParentItemFileMetadata | null = null;
     try {
       parentItemFileMetadata =
@@ -77,15 +122,23 @@ export class SendMessageUseCase {
         );
         return null;
       }
+      parentItemFileMetadata = await filterRequestPdfMetadata(
+        parentItem,
+        parentItemFileMetadata,
+      );
 
-      this.deps.uiManager.addUserMessage(messageText);
+      if (isOriginSessionActive()) {
+        this.deps.uiManager.addUserMessage(messageText);
+      }
       activeSession.addUserMessage(messageText);
       await activeSession.save();
 
-      const botMessageDiv = this.deps.uiManager.addBotMessage(
-        "Typing...",
-        "bot-message",
-      );
+      const botMessageDiv = isOriginSessionActive()
+        ? this.deps.uiManager.addBotMessage(
+            "Typing...",
+            "bot-message typing-message",
+          )
+        : null;
 
       try {
         const {
@@ -97,27 +150,31 @@ export class SendMessageUseCase {
           diagnostics,
         } = await activeSession.sendMessage(promptText, parentItemFileMetadata);
 
-        this.deps.uiManager.updateBotMessage(
-          botMessageDiv,
-          responseText,
-          thoughts,
-          citations,
-          provider,
-          model,
-          diagnostics,
-        );
+        if (botMessageDiv && isOriginSessionActive()) {
+          this.deps.uiManager.updateBotMessage(
+            botMessageDiv,
+            responseText,
+            thoughts,
+            citations,
+            provider,
+            model,
+            diagnostics,
+          );
+        }
         await activeSession.save();
       } catch (error: any) {
-        const errorMessage = error.message || String(error);
+        const errorMessage = getSafeRequestErrorMessage(error);
         Zotero.logError(
           new Error(
             `[Ask My Paper] SendMessageUseCase: Error during message sending: ${errorMessage}`,
           ),
         );
-        this.deps.uiManager.updateBotMessage(
-          botMessageDiv,
-          `Error: ${errorMessage}`,
-        );
+        if (botMessageDiv && isOriginSessionActive()) {
+          this.deps.uiManager.updateBotMessage(
+            botMessageDiv,
+            `Error: ${errorMessage}`,
+          );
+        }
       }
 
       return parentItemFileMetadata;

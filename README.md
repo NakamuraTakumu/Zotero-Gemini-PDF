@@ -38,13 +38,19 @@ per parent item.
 
 1. Build or install the plugin in Zotero.
 2. Open Zotero Preferences and find `Ask My Paper Settings`.
-3. Set your Gemini API key.
-4. Optionally adjust:
-   - system prompt
-   - prompt used for selected text
-   - available model list
-   - title generation model and prompt
-   - chat history limit
+3. Choose Gemini, OpenAI, or Anthropic as the chat provider.
+4. Set the API key for the provider you selected:
+   - Gemini uses a Gemini API key.
+   - OpenAI uses an OpenAI API key.
+   - Anthropic uses an Anthropic API key.
+5. Optionally adjust the provider-specific model list and selected model, then
+   adjust the system prompt, selected-text prompt, title generation settings,
+   citation rendering settings, and chat history limit.
+
+As of 2026-08-06, the built-in chat defaults are `gemini-3.5-flash-lite`,
+`gpt-5.6-luna`, and `claude-haiku-4-5-20251001`. Title generation and citation
+display use `gemini-3.5-flash-lite` by default. The provider-specific model
+lists remain editable in Preferences.
 
 ## Development
 
@@ -61,7 +67,8 @@ npm run build
 
 ## Notes
 
-- A valid provider API key is required.
+- A valid API key for the selected provider is required. The plugin stores keys
+  separately for Gemini, OpenAI, and Anthropic.
 - PDF files may be uploaded to the selected provider in order to provide
   document context.
 - This repository is based on the Zotero plugin template and is still under

@@ -13,6 +13,7 @@ import {
   setSelectedProvider,
 } from "../llm/provider";
 import { toStoredMessageView } from "../llm/langChainMessages";
+import { normalizeAssistantMarkdown } from "../llm/assistantMarkdown";
 import { LlmCitation, LlmDiagnostics, ProviderId } from "../../types/chat";
 
 import { ChatSessionManager } from "./chatSessionManager";
@@ -105,12 +106,9 @@ function toSafePdfCitationSource(locator: {
       start: 0,
       end: 1,
     });
-  } catch (error: any) {
-    const message = error.message || String(error);
+  } catch {
     Zotero.logError(
-      new Error(
-        `[Ask My Paper] Failed to resolve PDF citation source: ${message}`,
-      ),
+      new Error("[Ask My Paper] Failed to resolve PDF citation source."),
     );
     return `PDF ${locator.attachmentKey}`;
   }
@@ -193,22 +191,17 @@ const initMarkdownRenderer = (window: Window): MarkdownRenderer => {
   });
 
   const sanitizeHtmlToFragment = (html: string): DocumentFragment =>
-    (DOMPurify.sanitize(html, {
+    DOMPurify.sanitize(html, {
       ...MESSAGE_HTML_SANITIZE_OPTIONS,
       RETURN_DOM_FRAGMENT: true,
-    } as any) as unknown) as DocumentFragment;
+    } as any) as unknown as DocumentFragment;
 
   return {
     renderMarkdown(text: string): string {
       try {
         return fullRenderer.render(text || "");
-      } catch (error: any) {
-        const message = error.message || String(error);
-        Zotero.logError(
-          new Error(
-            `[Ask My Paper] Markdown render failed: ${message}`,
-          ),
-        );
+      } catch (error) {
+        Zotero.logError(new Error("[Ask My Paper] Markdown render failed."));
         throw error;
       }
     },
@@ -230,6 +223,9 @@ export class UIManager {
   private citationPopup: HTMLDivElement; // 追加
   private messageContextMenu: HTMLDivElement;
   private contextMenuTargetMessage: HTMLElement | null = null;
+  private messageContextMenuClickHandler?: (event: Event) => void;
+  private documentClickHandler?: () => void;
+  private documentKeydownHandler?: (event: KeyboardEvent) => void;
 
   constructor(
     doc: Document,
@@ -353,6 +349,28 @@ export class UIManager {
     this.prefObserverKeys = [];
   }
 
+  setChatSessionManager(chatSessionManager: ChatSessionManager): void {
+    this.chatSessionManager = chatSessionManager;
+  }
+
+  destroy(): void {
+    this.unregisterPrefObservers();
+    if (this.messageContextMenuClickHandler) {
+      this.messageContextMenu.removeEventListener(
+        "click",
+        this.messageContextMenuClickHandler,
+      );
+    }
+    if (this.documentClickHandler) {
+      this.doc.removeEventListener("click", this.documentClickHandler);
+    }
+    if (this.documentKeydownHandler) {
+      this.doc.removeEventListener("keydown", this.documentKeydownHandler);
+    }
+    this.citationPopup.remove();
+    this.messageContextMenu.remove();
+  }
+
   initProviderSelector() {
     const providerSelect = this.body.querySelector(
       "#llm-provider-select",
@@ -437,11 +455,11 @@ export class UIManager {
     );
     useWebSearchCheckbox.checked = useWebSearch;
 
-    useWebSearchCheckbox.addEventListener("change", (e) => {
+    useWebSearchCheckbox.onchange = (e) => {
       const newValue = (e.target as HTMLInputElement).checked;
       setPref(PREF_USE_WEB_SEARCH, newValue);
       Zotero.log(`[Ask My Paper] UI: Use Web Search changed to: ${newValue}.`);
-    });
+    };
   }
 
   initReasoningModeSelector() {
@@ -546,7 +564,7 @@ export class UIManager {
       );
 
       if (confirmDelete) {
-        Zotero.debug(`[Ask My Paper] Deleting session: ${activeSession.title}`);
+        Zotero.debug("[Ask My Paper] Deleting active session.");
         const success = await this.chatSessionManager.deleteActiveSession();
         if (success) {
           // ドロップダウンの更新はdeleteActiveSession内のonActiveSessionChangeコールバックがトリガーする
@@ -581,13 +599,9 @@ export class UIManager {
             new Error("[Ask My Paper] Failed to regenerate session title."),
           );
         }
-      } catch (e: any) {
+      } catch {
         Zotero.logError(
-          new Error(
-            `[Ask My Paper] Error regenerating session title: ${
-              e.message || String(e)
-            }`,
-          ),
+          new Error("[Ask My Paper] Error regenerating session title."),
         );
       } finally {
         regenerateButton.disabled = false;
@@ -611,7 +625,9 @@ export class UIManager {
       messageDiv.className = `message ${roleClass}`;
       const displayText = message.displayText;
       if (message.role === "assistant") {
-        let messageHtml = this.renderMarkdown(displayText);
+        let messageHtml = this.renderMarkdown(
+          normalizeAssistantMarkdown(displayText),
+        );
         messageHtml += this.renderMessageDetails(
           message.metadata.provider,
           message.metadata.model,
@@ -675,7 +691,12 @@ export class UIManager {
     model?: string,
     diagnostics?: LlmDiagnostics,
   ) => {
-    let messageHtml = this.renderMarkdown(responseText || "No response.");
+    if (element.classList.contains("typing-message")) {
+      element.className = "message bot-message";
+    }
+    let messageHtml = this.renderMarkdown(
+      normalizeAssistantMarkdown(responseText || "No response."),
+    );
     messageHtml += this.renderMessageDetails(
       provider,
       model,
@@ -699,12 +720,9 @@ export class UIManager {
     try {
       const fragment = this.sanitizeMessageHtmlToFragment(html);
       element.replaceChildren(fragment);
-    } catch (error: any) {
-      const message = error.message || String(error);
+    } catch {
       Zotero.logError(
-        new Error(
-          `[Ask My Paper] Failed to render message HTML. Falling back to textContent: ${message}`,
-        ),
+        new Error("[Ask My Paper] Failed to render message HTML."),
       );
       element.textContent = fallbackText || "Unable to render message.";
     }
@@ -904,29 +922,38 @@ export class UIManager {
   }
 
   private _initMessageContextMenuEvents(): void {
-    this.messageContextMenu.addEventListener("click", async (event: Event) => {
-      const target = event.target as HTMLElement;
-      const button = target.closest(
-        ".message-context-menu-item",
-      ) as HTMLElement | null;
-      if (!button) return;
-      const action = button.dataset.action;
-      if (action === "copy-plain-text") {
-        await this._copyContextMenuTargetMessage("plain");
-      } else if (action === "copy-markdown") {
-        await this._copyContextMenuTargetMessage("markdown");
-      } else if (action === "copy-selection") {
-        await this._copySelectedTextInTargetMessage();
-      }
-      this._hideMessageContextMenu();
-    });
-
-    this.doc.addEventListener("click", () => this._hideMessageContextMenu());
-    this.doc.addEventListener("keydown", (event: KeyboardEvent) => {
+    this.messageContextMenuClickHandler = (event: Event) => {
+      void this._handleMessageContextMenuClick(event);
+    };
+    this.documentClickHandler = () => this._hideMessageContextMenu();
+    this.documentKeydownHandler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         this._hideMessageContextMenu();
       }
-    });
+    };
+    this.messageContextMenu.addEventListener(
+      "click",
+      this.messageContextMenuClickHandler,
+    );
+    this.doc.addEventListener("click", this.documentClickHandler);
+    this.doc.addEventListener("keydown", this.documentKeydownHandler);
+  }
+
+  private async _handleMessageContextMenuClick(event: Event): Promise<void> {
+    const target = event.target as HTMLElement;
+    const button = target.closest(
+      ".message-context-menu-item",
+    ) as HTMLElement | null;
+    if (!button) return;
+    const action = button.dataset.action;
+    if (action === "copy-plain-text") {
+      await this._copyContextMenuTargetMessage("plain");
+    } else if (action === "copy-markdown") {
+      await this._copyContextMenuTargetMessage("markdown");
+    } else if (action === "copy-selection") {
+      await this._copySelectedTextInTargetMessage();
+    }
+    this._hideMessageContextMenu();
   }
 
   private _attachMessageContextMenuHandler(messageElement: HTMLElement): void {
@@ -1090,16 +1117,15 @@ export class UIManager {
             }
             const recovered = await recoverPdfCitationText(locator);
             this.citationPopup.textContent = recovered.isStale
-              ? `引用位置が古い可能性があります。\n\n${recovered.text}`
+              ? "引用原文を復元できません。PDF本文が引用後に変更されています。"
               : recovered.text;
-          } catch (error: any) {
-            const message = error.message || String(error);
+          } catch {
             Zotero.logError(
               new Error(
-                `[Ask My Paper] Failed to recover PDF citation hover text: ${message}`,
+                "[Ask My Paper] Failed to recover PDF citation hover text.",
               ),
             );
-            this.citationPopup.textContent = `引用原文を復元できませんでした: ${message}`;
+            this.citationPopup.textContent = "引用原文を復元できませんでした。";
           }
         }
       });

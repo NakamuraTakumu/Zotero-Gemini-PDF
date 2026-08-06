@@ -276,6 +276,11 @@
   width: 100%;
 }
 
+*|div.typing-message {
+  width: fit-content;
+  max-width: 100%;
+}
+
 *|div.message p {
   display: table !important;
   table-layout: fixed !important;

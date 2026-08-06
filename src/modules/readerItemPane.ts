@@ -4,6 +4,7 @@ import { PREF_CHAT_PANEL_HEIGHT } from "../utils/constants";
 import { setPref } from "../utils/prefs";
 
 import { buildReaderItemPaneBodyXhtml } from "./reader/itemPaneMarkup";
+import { dispatchRequestStatusChangedEvent } from "./reader/requestStatusEvents";
 
 /**
  * A factory class responsible for registering the chat pane UI and its lifecycle hooks with Zotero.
@@ -31,15 +32,7 @@ export class ReaderItemPaneFactory {
     paneId: string,
     isRequestInProgress: boolean,
   ) {
-    const event = new (Zotero.getMainWindow() as any).CustomEvent(
-      "ask-my-paper-request-status-changed",
-      {
-        bubbles: true,
-        cancelable: true,
-        detail: { paneId, isRequestInProgress },
-      },
-    );
-    Zotero.getMainWindow().document.dispatchEvent(event);
+    dispatchRequestStatusChangedEvent(paneId, isRequestInProgress);
   }
 
   /**

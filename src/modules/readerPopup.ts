@@ -1,5 +1,4 @@
 // ask-my-paper/src/modules/readerPopup.ts
-import { createZToolkit } from "../utils/ztoolkit";
 import { getPref } from "../utils/prefs";
 import { config } from "../../package.json";
 import { ASK_MY_PAPER_ICON } from "../utils/icon";
@@ -7,12 +6,14 @@ import { PREF_PROMPT_FOR_SELECTION } from "../utils/constants";
 import { ReaderItemPaneFactory } from "./readerItemPane"; // Import ReaderItemPaneFactory
 import { ChatPane } from "./reader/chatPane"; // Import ChatPane
 
+const popupListenerCleanups = new WeakMap<Document, () => void>();
+
 export function buildReaderPopup(
   event: _ZoteroTypes.Reader.EventParams<"renderTextSelectionPopup">,
 ) {
   const { doc, append, reader } = event; // Destructure reader from event
   const window = doc.defaultView as any; // Get the window object from the document
-  const ztoolkit = createZToolkit();
+  popupListenerCleanups.get(doc)?.();
 
   // Determine the actual parent item's ID for this reader instance
   let actualParentItemId: number | undefined;
@@ -160,16 +161,23 @@ export function buildReaderPopup(
     }
   };
 
-  Zotero.getMainWindow().document.addEventListener(
+  const mainDocument = Zotero.getMainWindow().document;
+  mainDocument.addEventListener(
     "ask-my-paper-request-status-changed",
     requestStatusChangeListener,
   );
-
-  // Note: MutationObserver causes TypeError in some Zotero environments.
-  // For now, we will rely on garbage collection for the button element itself
-  // and accept potential memory leaks for the listener.
-  // A more robust solution would involve Zotero-specific DOM lifecycle events
-  // or a different cleanup mechanism if MutationObserver is truly problematic.
+  const cleanup = () => {
+    mainDocument.removeEventListener(
+      "ask-my-paper-request-status-changed",
+      requestStatusChangeListener,
+    );
+    window?.removeEventListener?.("unload", cleanup);
+    if (popupListenerCleanups.get(doc) === cleanup) {
+      popupListenerCleanups.delete(doc);
+    }
+  };
+  popupListenerCleanups.set(doc, cleanup);
+  window?.addEventListener?.("unload", cleanup, { once: true });
 
   append(button);
 }

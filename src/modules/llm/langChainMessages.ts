@@ -203,11 +203,9 @@ async function replacePdfCitationBlocksForLlm(
         from: block.fullBlock,
         to: `[Previous PDF evidence: ${evidenceId}]`,
       });
-    } catch (error: any) {
+    } catch (_error) {
       Zotero.logError(
-        new Error(
-          `[Ask My Paper] Failed to adapt PDF citation history: ${error.message || String(error)}`,
-        ),
+        new Error("[Ask My Paper] Failed to adapt PDF citation history."),
       );
       replacements.push({ from: block.fullBlock, to: "" });
     }

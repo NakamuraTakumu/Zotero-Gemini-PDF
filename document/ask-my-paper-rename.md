@@ -1,3 +1,18 @@
+---
+title: "Ask My Paper Rename Implementation"
+responsibility: "Ask My Paperへの名称変更で置換したruntime名と、意図的に残した旧名参照を記録する。"
+summary: "addon identity、preference、attachment、UIの名称変更を記録した特定commit時点の実装記録である。"
+created: "2026-05-20 14:01 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "4cdee21cbd6bfe7cafa25fc73b33885ac2417182"
+model: "gpt-5.5"
+reasoning_effort: "high"
+session: "019e45aa-3d63-7a11-a625-d08c77c27e71"
+handling: "document-workflow"
+stale: true
+---
+
 # Ask My Paper rename implementation
 
 - Created: 2026-05-20 14:01 UTC

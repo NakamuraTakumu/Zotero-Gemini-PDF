@@ -3,13 +3,14 @@ title: "Host-driven PDF Citation Design"
 responsibility: "LLMのtool callに依存せず、PDF本文を正確な文章境界で引用する方式を定義する。"
 summary: "hostが検索と文章境界確定を必ず実行し、LLMは事前生成したEvidenceCardを回答単位へ対応付けるだけの方式を採用する。"
 created: "2026-07-28 08:02 UTC"
-updated: "2026-07-28 08:02 UTC"
+updated: "2026-07-29 04:49 UTC"
 workspace: "/home/nakamura/gemini-pdf"
 related_commit: "none"
 model: "gpt-5.6-sol"
 reasoning_effort: "medium"
 session: "019fa7ad-42be-7f70-a76e-7e1fe3e04ef8"
 handling: "document-workflow"
+stale: true
 ---
 
 # Host-driven PDF Citation Design
@@ -88,7 +89,7 @@ PDF extractorからpage、block、line、span、座標を取得できる場合�
 各cardについて、次の関係を機械検査する。
 
 ```ts
-card.rawText === snapshot.slice(card.start, card.end)
+card.rawText === snapshot.slice(card.start, card.end);
 ```
 
 この一致は原文忠実性を保証する。

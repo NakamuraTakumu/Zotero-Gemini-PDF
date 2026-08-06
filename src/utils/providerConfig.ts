@@ -41,9 +41,9 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     modelListPref: PREF_GEMINI_MODEL_LIST,
     selectedModelPref: PREF_GEMINI_SELECTED_MODEL,
     currentModelList:
-      "gemini-3.5-flash,gemini-3.1-pro-preview,gemini-3.1-flash-lite,gemini-3-flash-preview",
-    defaultModel: "gemini-3.5-flash",
-    defaultTitleModel: "gemini-3.1-flash-lite",
+      "gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.1-pro-preview",
+    defaultModel: "gemini-3.5-flash-lite",
+    defaultTitleModel: "gemini-3.5-flash-lite",
   },
   openai: {
     id: "openai",
@@ -52,9 +52,9 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     modelListPref: PREF_OPENAI_MODEL_LIST,
     selectedModelPref: PREF_OPENAI_SELECTED_MODEL,
     currentModelList:
-      "gpt-5.5,gpt-5.5-pro,gpt-5.4,gpt-5.4-pro,gpt-5.4-mini,gpt-5.4-nano",
-    defaultModel: "gpt-5.5",
-    defaultTitleModel: "gpt-5.4-nano",
+      "gpt-5.6-terra,gpt-5.6-sol,gpt-5.6-luna,gpt-5-mini,gpt-5-nano",
+    defaultModel: "gpt-5.6-luna",
+    defaultTitleModel: "gpt-5.6-luna",
   },
   anthropic: {
     id: "anthropic",
@@ -63,14 +63,14 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     modelListPref: PREF_ANTHROPIC_MODEL_LIST,
     selectedModelPref: PREF_ANTHROPIC_SELECTED_MODEL,
     currentModelList:
-      "claude-sonnet-4-5-20250929,claude-haiku-4-5-20251001,claude-opus-4-5-20251101",
-    defaultModel: "claude-sonnet-4-5-20250929",
+      "claude-sonnet-5,claude-fable-5,claude-opus-5,claude-haiku-4-5-20251001",
+    defaultModel: "claude-haiku-4-5-20251001",
     defaultTitleModel: "claude-haiku-4-5-20251001",
   },
 };
 
-export const DEFAULT_TITLE_GENERATION_MODEL = "gemini-3.1-flash-lite";
-export const DEFAULT_CITATION_RENDER_MODEL = "gemini-3.1-flash-lite";
+export const DEFAULT_TITLE_GENERATION_MODEL = "gemini-3.5-flash-lite";
+export const DEFAULT_CITATION_RENDER_MODEL = "gemini-3.5-flash-lite";
 
 export function getProviderConfig(provider: ProviderId): ProviderConfig {
   return PROVIDER_CONFIGS[provider];

@@ -13,7 +13,7 @@ Zotero PDF を引用するとき、LLM は assistant message 本文に citation 
 
 開始行では、`citation` の後ろに JSON object を 1 つだけ置く。LLM は block 本文を書かない。block 本文は plugin が保存または表示前に生成する。
 
-LLM は `locator`、`start`、`end`、`source`、`rawText`、`textVersion` を citation block に書かない。`rangeId` は同じ LLM request 内の `read_pdf_text_range` が返した値だけを使う。
+LLM は `locator`、offset、`sourceText`、`quote`、`rawText`、`textVersion` を citation block に書かない。`rangeId` は同じ LLM request 内の `register_pdf_quote` が返した値だけを使う。
 
 ## Citation Object
 
@@ -45,7 +45,7 @@ chat history に保存される正規化済み citation block は、次の形式
 :::
 ```
 
-`locator` と `textVersion` は LLM の責務ではない。LLM はこれらを生成、計算、または copy してはならない。tool result が `textVersion` を含む場合でも、plugin は自分で計算した値を正本として扱う。
+`locator` は LLM の責務ではなく、生成または計算してはならない。`textVersion` は `find_pdf_text` から `register_pdf_quote` へ変更せずコピーするためだけに使い、citation block には書かない。plugin は現在の PDF 本文から計算した値を正本として扱う。
 
 ## 原文テキストの扱い
 
@@ -74,9 +74,8 @@ citation render LLM は、添付 PDF を使って `rawText` 内の記号や数�
 
 ## 引用位置探索 Tool
 
-LLM は Zotero `attachmentText` 全体を直接受け取らない。PDF 引用が必要なときは、tool calling で `attachmentText` 内の引用位置を探索し、最終回答には `read_pdf_text_range` が返した `rangeId` を使って citation block を書く。
-
-`start` と `end` は JavaScript string index と同じ UTF-16 code unit offset とする。
+LLM は Zotero `attachmentText` 全体を直接受け取らない。PDF 引用が必要なときは、`find_pdf_text` が返すsource textからquoteを選び、`register_pdf_quote` が返した `rangeId` を使ってcitation blockを書く。
+toolの入出力にはlocator offsetを含めず、pluginがquoteの完全一致位置から内部locatorを計算する。
 
 ### `find_pdf_text`
 
@@ -103,73 +102,68 @@ type FindPdfTextResult = {
 
   /** 検索候補。 */
   matches: Array<{
-    /** 候補範囲の開始 offset。UTF-16 code unit index。 */
-    start: number;
-
-    /** 候補範囲の終了 offset。UTF-16 code unit index。この offset の文字は含まない。 */
-    end: number;
-
-    /** 候補範囲の原文。 */
-    text: string;
-
-    /** 候補範囲の直前文脈。plugin 固定長で match start の直前から切り出す。 */
-    before: string;
-
-    /** 候補範囲の直後文脈。plugin 固定長で match end の直後から切り出す。 */
-    after: string;
+    /** 検索一致を含む未変更の連続したPDF原文。 */
+    sourceText: string;
   }>;
 };
 ```
 
-### `read_pdf_text_range`
+source textの前後幅はpluginが固定する。
+source textを自然な文章境界へ補正するのではなく、LLMがその中から完全なquoteを選ぶ。
 
-`read_pdf_text_range` は、指定された `start` と `end` の範囲を Zotero `attachmentText` から読み、必要に応じて前後の固定幅文脈も返す。
+### `register_pdf_quote`
+
+`register_pdf_quote` は、LLMがsource textから原文のまま抜き出したquoteを完全一致検索し、内部locatorへ登録する。
+PDF全文でquoteが一意なら `sourceText` を省略する。
+同じquoteが複数ある場合だけ、`find_pdf_text` が返した変更前の `sourceText` を追加する。
 
 ```ts
-type ReadPdfTextRangeArgs = {
-  /** 読み取り対象 PDF attachment を所有する Zotero library ID。 */
+type RegisterPdfQuoteArgs = {
+  /** 登録対象 PDF attachment を所有する Zotero library ID。 */
   libraryID: number;
 
-  /** 読み取り対象 PDF attachment の Zotero item key。 */
+  /** 登録対象 PDF attachment の Zotero item key。 */
   attachmentKey: string;
 
-  /** 読み取りたい範囲の開始 offset。UTF-16 code unit index。 */
-  start: number;
+  /** find_pdf_text が返した attachmentText の hash。 */
+  textVersion: string;
 
-  /** 読み取りたい範囲の終了 offset。UTF-16 code unit index。この offset の文字は含まない。 */
-  end: number;
+  /** sourceText から抜き出した未変更の完全な引用原文。 */
+  quote: string;
+
+  /** quote が PDF 全文に複数ある場合だけ渡す、find_pdf_text の未変更の sourceText。 */
+  sourceText?: string;
 };
 
-type ReadPdfTextRangeResult = {
+type RegisterPdfQuoteResult = {
   /** 最終回答の citation block に書く request-local range ID。 */
   rangeId: string;
 
   /** plugin が現在の attachmentText から計算した hash。LLM は最終 citation に書かない。 */
   textVersion: string;
 
-  /** plugin が clamp した実際の開始 offset。 */
-  start: number;
-
-  /** plugin が clamp した実際の終了 offset。この offset の文字は含まない。 */
-  end: number;
-
-  /** 指定範囲の原文。 */
+  /** 登録したquoteと完全一致するPDF原文。 */
   text: string;
 
-  /** 指定範囲の直前文脈。plugin 固定長で start の直前から切り出す。 */
+  /** 登録範囲の直前文脈。 */
   before: string;
 
-  /** 指定範囲の直後文脈。plugin 固定長で end の直後から切り出す。 */
+  /** 登録範囲の直後文脈。 */
   after: string;
 };
 ```
 
+source textを省略した場合、pluginはPDF全文でquoteが一度だけ現れる場合に限って登録する。
+source textを渡した場合、pluginはPDF全文でsource textが一意であり、その中でquoteが一意である場合に限って登録する。
+quoteとsource textの照合には正規化検索を使わない。
+
 ### Tool 制限
 
-- `contextBefore` / `contextAfter`: LLM は指定できない。plugin が固定値 160 を使う。
+- `sourceText` の前後文脈: LLM は指定できない。plugin が検索一致の前後160 UTF-16 code unitsを使う。
 - `maxMatches`: LLM は指定できない。plugin が固定値 5 を使う。
 - `query`: 最大 2000 characters。
-- `read_pdf_text_range` の `end - start`: 最大 4000 characters。
+- `quote`: 最大 4000 characters。
+- optional `sourceText`: 最大 8000 characters。
 - tool call 回数が上限に達した場合、LLM は PDF citation なしで回答を続ける。
 
 ## Parse 規則

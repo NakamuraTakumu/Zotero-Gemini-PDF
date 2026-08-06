@@ -1,3 +1,18 @@
+---
+title: "LangChain Provider PDF Upload Migration"
+responsibility: "LangChain移行とprovider別PDF upload実装について、当時の構成、判断、検証結果を記録する。"
+summary: "三providerのchatとPDF uploadをadapterへ分離した移行記録であり、現在のupload invalidationとerror境界にはそのまま適用しない。"
+created: "2026-05-19 17:28 UTC"
+updated: "2026-07-29 04:48 UTC"
+workspace: "/home/nakamura/gemini-pdf"
+related_commit: "none"
+model: "gpt-5.5"
+reasoning_effort: "high"
+session: "019e4058-db50-7f81-8590-c7f52f42528d"
+handling: "document-workflow"
+stale: true
+---
+
 # LangChain Provider PDF Upload Migration
 
 - Created: 2026-05-19 17:28 UTC

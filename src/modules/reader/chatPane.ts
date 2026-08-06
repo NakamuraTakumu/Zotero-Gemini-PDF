@@ -2,12 +2,12 @@ import { ParentItemFileMetadata } from "../../types/chat";
 import { ChatSession } from "./chatSession";
 import { ChatSessionManager } from "./chatSessionManager";
 import { UIManager } from "./ui";
-import { ReaderItemPaneFactory } from "../readerItemPane";
 import { getPref, setPref } from "../../utils/prefs";
 import { PREF_CHAT_PANEL_HEIGHT } from "../../utils/constants";
 import { PdfFileSyncManager } from "./pdfSyncManager";
 import GlobalChatManager from "../globalChatManager"; // Import GlobalChatManager
 import { SendMessageUseCase } from "./sendMessageUseCase";
+import { dispatchRequestStatusChangedEvent } from "./requestStatusEvents";
 
 /**
  * Manages the state and behavior of a single chat pane in the Zotero reader.
@@ -28,6 +28,9 @@ export class ChatPane {
   };
   private pdfFileSyncManager: PdfFileSyncManager;
   private sendMessageUseCase?: SendMessageUseCase;
+  private managedParentItemKey?: string;
+  private inFlightSendPromise: Promise<ParentItemFileMetadata | null> | null =
+    null;
 
   // Bound event handlers for cleanup
   private _boundHandleLinkClick!: (e: Event) => void;
@@ -35,6 +38,7 @@ export class ChatPane {
   private _boundHandleEnterKey!: (e: KeyboardEvent) => void;
   private _boundHandleNewChat!: () => Promise<void>;
   private _boundHandleResize!: (e: MouseEvent) => void;
+  private _boundHandleSessionControlInteraction!: (e: Event) => void;
 
   constructor(body: HTMLElement) {
     this.paneId = Zotero.Utilities.randomString(8);
@@ -72,10 +76,26 @@ export class ChatPane {
         ? await Zotero.Items.getAsync(item.parentID)
         : item;
 
-    // Ensure chatSessionManager is initialized only once per pane instance
+    if (!actualParentItem) {
+      Zotero.logError(
+        new Error("Cannot render chat pane, no parent item found."),
+      );
+      return;
+    }
+
+    // The manager is scoped to a parent item, not to the reusable pane DOM.
     if (!this.chatSessionManager) {
+      this._updateZoteroContext(actualParentItem);
       await this._initializeManagers(actualParentItem);
-      this._setupEventListeners(); // Listeners are now set up only once
+      this._setupEventListeners();
+    } else if (this.managedParentItemKey !== actualParentItem.key) {
+      // A request owns the current manager until it finishes. Waiting here keeps
+      // its persistence target and its rendered response in the same item.
+      await this._waitForInFlightSend();
+      this._updateZoteroContext(actualParentItem);
+      await this._replaceSessionManager(actualParentItem);
+    } else {
+      this._updateZoteroContext(actualParentItem);
     }
 
     if (!this.chatSessionManager) {
@@ -87,7 +107,6 @@ export class ChatPane {
 
     this._initializeUI();
     this._loadConversation();
-    this._updateZoteroContext(actualParentItem);
   }
 
   private async _initializeManagers(actualParentItem: Zotero.Item | null) {
@@ -106,23 +125,7 @@ export class ChatPane {
       throw new Error("GlobalChatManager not initialized on addon.data.");
     }
 
-    const chatSessionManager = new ChatSessionManager(
-      actualParentItem,
-      addon.data.globalChatManager, // Pass globalChatManager
-      {
-        rerenderChatMessages: (session: ChatSession | null) => {
-          if (this.managers) {
-            this.managers.uiManager.renderChatMessages(session);
-          }
-        },
-        rerenderSwitcher: () => {
-          if (this.managers) {
-            this.managers.uiManager.renderSessionSwitcherList();
-            this.managers.uiManager.updateSessionSwitcherSelection();
-          }
-        },
-      },
-    );
+    const chatSessionManager = this._createSessionManager(actualParentItem);
 
     const uiManager = new UIManager(
       doc,
@@ -134,21 +137,87 @@ export class ChatPane {
 
     this.managers = { uiManager };
     this.chatSessionManager = chatSessionManager;
-    this.sendMessageUseCase = new SendMessageUseCase({
+    this.sendMessageUseCase = this._createSendMessageUseCase(
+      uiManager,
+      chatSessionManager,
+    );
+    this.managedParentItemKey = actualParentItem.key;
+
+    await chatSessionManager.init();
+  }
+
+  private _createSessionManager(
+    actualParentItem: Zotero.Item,
+  ): ChatSessionManager {
+    if (!addon.data.globalChatManager) {
+      throw new Error("GlobalChatManager not initialized on addon.data.");
+    }
+
+    return new ChatSessionManager(
+      actualParentItem,
+      addon.data.globalChatManager,
+      {
+        rerenderChatMessages: (session: ChatSession | null) => {
+          this.managers?.uiManager.renderChatMessages(session);
+        },
+        rerenderSwitcher: () => {
+          this.managers?.uiManager.renderSessionSwitcherList();
+          this.managers?.uiManager.updateSessionSwitcherSelection();
+        },
+      },
+    );
+  }
+
+  private _createSendMessageUseCase(
+    uiManager: UIManager,
+    chatSessionManager: ChatSessionManager,
+  ): SendMessageUseCase {
+    return new SendMessageUseCase({
       paneId: this.paneId,
       getParentItem: () => this.zoteroContext.actualParentItem,
       getIsRequestInProgress: () => this.runtimeState.isLlmRequestInProgress,
       setIsRequestInProgress: (isRequestInProgress) => {
         this.runtimeState.isLlmRequestInProgress = isRequestInProgress;
+        this._setSessionControlsDisabled(isRequestInProgress);
       },
-      dispatchRequestStatusChanged:
-        ReaderItemPaneFactory.dispatchRequestStatusChangedEvent,
+      dispatchRequestStatusChanged: dispatchRequestStatusChangedEvent,
       uiManager,
       chatSessionManager,
       pdfFileSyncManager: this.pdfFileSyncManager,
     });
+  }
+
+  private async _replaceSessionManager(parentItem: Zotero.Item): Promise<void> {
+    this.chatSessionManager.destroy();
+
+    const chatSessionManager = this._createSessionManager(parentItem);
+    this.chatSessionManager = chatSessionManager;
+    this.managers.uiManager.setChatSessionManager(chatSessionManager);
+    this.pdfFileSyncManager = new PdfFileSyncManager();
+    this.sendMessageUseCase = this._createSendMessageUseCase(
+      this.managers.uiManager,
+      chatSessionManager,
+    );
+    this.parentItemFileMetadata = null;
+    this.managedParentItemKey = parentItem.key;
 
     await chatSessionManager.init();
+  }
+
+  private async _waitForInFlightSend(): Promise<void> {
+    const inFlightSendPromise = this.inFlightSendPromise;
+    if (!inFlightSendPromise) {
+      return;
+    }
+    try {
+      await inFlightSendPromise;
+    } catch (_error) {
+      Zotero.logError(
+        new Error(
+          "[Ask My Paper] Waiting for in-flight request before item switch failed.",
+        ),
+      );
+    }
   }
 
   private _initializeUI() {
@@ -210,6 +279,8 @@ export class ChatPane {
     this._boundHandleEnterKey = this._handleEnterKey.bind(this);
     this._boundHandleNewChat = this._handleNewChat.bind(this);
     this._boundHandleResize = this._handleResize.bind(this);
+    this._boundHandleSessionControlInteraction =
+      this._handleSessionControlInteraction.bind(this);
 
     // Add all event listeners
     sendButton.addEventListener("click", this._boundHandleSendMessage);
@@ -217,6 +288,53 @@ export class ChatPane {
     newChatButton.addEventListener("click", this._boundHandleNewChat);
     chatResizer.addEventListener("mousedown", this._boundHandleResize);
     chatMessages.addEventListener("click", this._boundHandleLinkClick);
+    body.addEventListener(
+      "change",
+      this._boundHandleSessionControlInteraction,
+      true,
+    );
+    body.addEventListener(
+      "click",
+      this._boundHandleSessionControlInteraction,
+      true,
+    );
+  }
+
+  private _handleSessionControlInteraction(event: Event): void {
+    if (!this.runtimeState.isLlmRequestInProgress) {
+      return;
+    }
+
+    const target = event.target as HTMLElement | null;
+    const control = target?.closest(
+      "#chat-session-switcher, #delete-session-button, #new-chat-button",
+    ) as HTMLElement | null;
+    if (!control) {
+      return;
+    }
+
+    // Existing sessions remain selectable during a request. The request keeps
+    // its originating session as the persistence target; SendMessageUseCase
+    // suppresses response rendering while another session is active.
+    if (control.id === "chat-session-switcher") {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  private _setSessionControlsDisabled(disabled: boolean): void {
+    const { body } = this.uiElements;
+    const controls = [
+      body.querySelector("#delete-session-button"),
+      body.querySelector("#new-chat-button"),
+    ];
+    controls.forEach((control) => {
+      if (control) {
+        (control as HTMLButtonElement | HTMLSelectElement).disabled = disabled;
+      }
+    });
   }
 
   private _loadConversation() {
@@ -302,13 +420,17 @@ export class ChatPane {
     const messagesMargins =
       this._cssPixels(messagesStyle?.marginTop) +
       this._cssPixels(messagesStyle?.marginBottom);
+    const paneWindow = this.uiElements.doc.defaultView;
     const reservedHeight = Array.from(chatContainer.children).reduce(
       (total, child) => {
-        if (child === chatMessages || !(child instanceof HTMLElement)) {
+        if (
+          child === chatMessages ||
+          !paneWindow ||
+          !(child instanceof paneWindow.HTMLElement)
+        ) {
           return total;
         }
-        const childStyle =
-          this.uiElements.doc.defaultView?.getComputedStyle(child);
+        const childStyle = paneWindow.getComputedStyle(child);
         return (
           total +
           child.getBoundingClientRect().height +
@@ -379,13 +501,28 @@ export class ChatPane {
       return;
     }
 
-    this.parentItemFileMetadata = await this.sendMessageUseCase.execute(
+    if (this.runtimeState.isLlmRequestInProgress) {
+      return;
+    }
+
+    const sendPromise = this.sendMessageUseCase.execute(
       messageText,
       promptText,
     );
+    this.inFlightSendPromise = sendPromise;
+    try {
+      this.parentItemFileMetadata = await sendPromise;
+    } finally {
+      if (this.inFlightSendPromise === sendPromise) {
+        this.inFlightSendPromise = null;
+      }
+    }
   }
 
   private async _handleNewChat() {
+    if (this.runtimeState.isLlmRequestInProgress) {
+      return;
+    }
     Zotero.log(`[Ask My Paper] _handleNewChat: New chat button clicked.`);
     const newSession = await this.chatSessionManager.createSession();
     if (newSession) {
@@ -452,14 +589,10 @@ export class ChatPane {
       `[Ask My Paper] Action event received for matching item ${this.zoteroContext.itemId}`,
     );
     Zotero.log(
-      `[Ask My Paper] _handleAskMyPaperAction: event.detail: ${JSON.stringify(event.detail)}`,
+      `[Ask My Paper] _handleAskMyPaperAction: promptLength=${event.detail.fullPrompt?.length || 0}, summaryLength=${event.detail.summaryText?.length || 0}`,
     );
 
     const { fullPrompt, summaryText } = event.detail;
-    Zotero.log(
-      `[Ask My Paper] _handleAskMyPaperAction: fullPrompt: ${fullPrompt}, summaryText: ${summaryText}`,
-    );
-
     // For now, we reuse the general send message handler
     await this._handleSendMessage(summaryText, fullPrompt);
   }
@@ -498,9 +631,22 @@ export class ChatPane {
     if (chatResizer && this._boundHandleResize) {
       chatResizer.removeEventListener("mousedown", this._boundHandleResize);
     }
+    if (this._boundHandleSessionControlInteraction) {
+      body.removeEventListener(
+        "change",
+        this._boundHandleSessionControlInteraction,
+        true,
+      );
+      body.removeEventListener(
+        "click",
+        this._boundHandleSessionControlInteraction,
+        true,
+      );
+    }
     // Destroy the chatSessionManager instance
     if (this.chatSessionManager) {
       this.chatSessionManager.destroy();
     }
+    this.managers?.uiManager.destroy();
   }
 }

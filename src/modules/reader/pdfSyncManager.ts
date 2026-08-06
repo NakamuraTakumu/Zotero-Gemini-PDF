@@ -11,6 +11,17 @@ import {
 } from "../../types/chat";
 import { ParentItemDataRepository } from "./parentItemDataRepository";
 
+export function isPdfUploadStale(
+  previousLastModified: number | undefined,
+  currentLastModified: number | undefined,
+): boolean {
+  return (
+    typeof previousLastModified === "number" &&
+    typeof currentLastModified === "number" &&
+    previousLastModified !== currentLastModified
+  );
+}
+
 /**
  * Manages the synchronization of PDF files with the selected provider's file API,
  * including the persistence of synchronization metadata.
@@ -56,11 +67,10 @@ export class PdfFileSyncManager {
       }
       this.parentItemFileMetadata = metadata;
       return this.parentItemFileMetadata;
-    } catch (e: any) {
-      const errorMessage = e.message || String(e);
-      Zotero.logError(new Error(`Error synchronizing PDFs: ${errorMessage}`));
+    } catch {
+      Zotero.logError(new Error("[Ask My Paper] Error synchronizing PDFs."));
       uiManager.addBotMessage(
-        `Error synchronizing PDFs: ${errorMessage}`,
+        "PDFを同期できませんでした。しばらくしてからもう一度お試しください。",
         "error-message",
       );
       return null;
@@ -129,12 +139,13 @@ export class PdfFileSyncManager {
 
       if (!pdfPath) {
         Zotero.logError(
-          new Error(`Could not get file path for PDF: ${pdfTitle}`),
+          new Error("[Ask My Paper] Could not access a PDF file."),
         );
         return;
       }
 
       let targetFileInfo = fileInfo;
+      let localFileChanged = false;
       if (!targetFileInfo) {
         targetFileInfo = {
           libraryID: pdf.libraryID,
@@ -146,6 +157,10 @@ export class PdfFileSyncManager {
         metadata.files.push(targetFileInfo);
         updated = true;
       } else {
+        localFileChanged = isPdfUploadStale(
+          targetFileInfo.lastModified,
+          lastModified,
+        );
         targetFileInfo.libraryID = targetFileInfo.libraryID || pdf.libraryID;
         targetFileInfo.fileName = targetFileInfo.fileName || pdfTitle;
         targetFileInfo.lastModified = lastModified;
@@ -154,11 +169,15 @@ export class PdfFileSyncManager {
           : [];
       }
 
-      let needsUpload = false;
+      let needsUpload = localFileChanged;
       const uploadInfo = targetFileInfo.uploads.find(
         (upload) => upload.provider === provider,
       );
-      if (uploadInfo) {
+      if (localFileChanged) {
+        Zotero.debug(
+          `${provider} upload for ${targetFileInfo.fileName} is stale because the local PDF changed. Re-uploading.`,
+        );
+      } else if (uploadInfo) {
         Zotero.debug(
           `Checking ${provider} upload for PDF: ${targetFileInfo.fileName}`,
         );
@@ -183,7 +202,7 @@ export class PdfFileSyncManager {
       if (needsUpload) {
         try {
           Zotero.log(
-            `[Ask My Paper] Uploading PDF to ${provider}: ${pdfTitle} (${pdfPath})`,
+            `[Ask My Paper] Uploading PDF to ${provider}: ${pdfTitle}`,
           );
           ui.updateBotMessage(
             statusMessageDiv,
@@ -199,18 +218,15 @@ export class PdfFileSyncManager {
             `Successfully uploaded and recorded ${provider} file: ${pdfTitle}`,
           );
         } catch (uploadError: any) {
-          const uploadErrorMessage = uploadError.message || String(uploadError);
           Zotero.log(
-            `[Ask My Paper] Failed to upload PDF to ${provider}: ${pdfTitle}: ${uploadErrorMessage}`,
+            `[Ask My Paper] Failed to upload PDF to ${provider}: ${pdfTitle}`,
           );
           Zotero.logError(
-            new Error(
-              `Failed to upload ${pdfTitle} to ${provider}: ${uploadErrorMessage}`,
-            ),
+            new Error(`[Ask My Paper] Failed to upload PDF to ${provider}.`),
           );
           ui.updateBotMessage(
             statusMessageDiv,
-            `Error uploading ${pdfTitle} to ${provider}: ${uploadErrorMessage}`,
+            `${pdfTitle}を${provider}へアップロードできませんでした。しばらくしてからもう一度お試しください。`,
           );
           throw uploadError;
         }
@@ -263,9 +279,7 @@ export class PdfFileSyncManager {
     try {
       await this.parentItemDataRepository.save(parentItem, metadata);
     } catch (e: any) {
-      Zotero.debug(
-        `Error writing to ParentItemFileMetadata file: ${e.message || String(e)}`,
-      );
+      Zotero.debug("[Ask My Paper] Error writing parent item data.");
       throw e;
     }
   }

@@ -10,6 +10,7 @@ const DEFAULT_CONTEXT_CHARS = 160;
 const DEFAULT_MAX_MATCHES = 5;
 const MAX_QUERY_CHARS = 2000;
 const MAX_READ_RANGE_CHARS = 4000;
+const MAX_SOURCE_TEXT_CHARS = 8000;
 const DIAGNOSTIC_PREVIEW_CHARS = 160;
 const RANGE_ID_RANDOM_CHARS = 8;
 const RANGE_ID_ALPHABET = "23456789abcdefghijkmnopqrstuvwxyz";
@@ -63,7 +64,7 @@ export class PdfCitationRangeRegistry {
     if (!text.trim()) {
       throw new Error("PDF citation range text is empty.");
     }
-    if (input.locator.end <= input.locator.start) {
+    if (input.locator.start < 0 || input.locator.end <= input.locator.start) {
       throw new Error(
         `Invalid PDF citation range: start=${input.locator.start}, end=${input.locator.end}`,
       );
@@ -134,11 +135,19 @@ interface PdfTextMatch {
   after: string;
 }
 
-interface FindPdfTextArgs {
+export interface FindPdfTextArgs {
   libraryID: number;
   attachmentKey: string;
   query: string;
   normalize?: boolean;
+}
+
+export interface RegisterPdfQuoteArgs {
+  libraryID: number;
+  attachmentKey: string;
+  textVersion: string;
+  quote: string;
+  sourceText?: string;
 }
 
 interface ReadPdfTextRangeArgs {
@@ -154,6 +163,7 @@ export interface PdfCitationBlockMatch {
   displayText: string;
   index: number;
   hasNestedCitation: boolean;
+  isClosed: boolean;
 }
 
 export interface PdfCitationToolCallTraceInput {
@@ -201,8 +211,8 @@ export function createPdfCitationTools(
       },
     ),
     tool(
-      async (args: ReadPdfTextRangeArgs) => {
-        const range = await readPdfTextRange(args);
+      async (args: RegisterPdfQuoteArgs) => {
+        const range = await registerPdfQuote(args);
         const registryEntry = options.rangeRegistry?.register({
           locator: {
             libraryID: args.libraryID,
@@ -219,36 +229,47 @@ export function createPdfCitationTools(
         return JSON.stringify({
           ...(registryEntry ? { rangeId: registryEntry.rangeId } : {}),
           textVersion: range.textVersion,
-          start: range.start,
-          end: range.end,
           text: range.text,
           before: range.before,
           after: range.after,
         });
       },
       {
-        name: "read_pdf_text_range",
+        name: "register_pdf_quote",
         description:
-          "Read a UTF-16 code unit range from Zotero attachmentText, register it as PDF evidence, and return a rangeId for citation blocks.",
+          "Register an exact quote copied from find_pdf_text sourceText and return a rangeId. Omit sourceText normally. Include the unchanged sourceText only when the quote occurs multiple times in the PDF.",
         schema: z.object({
           libraryID: z
             .number()
             .int()
-            .describe("Zotero library ID that owns the PDF attachment."),
+            .describe(
+              "Zotero library ID returned in the current request's PDF citation attachment context.",
+            ),
           attachmentKey: z
             .string()
-            .describe("Zotero item key of the PDF attachment to read."),
-          start: z
-            .number()
-            .int()
-            .min(0)
-            .describe("Start offset in Zotero attachmentText."),
-          end: z
-            .number()
-            .int()
-            .min(0)
             .describe(
-              "End offset in Zotero attachmentText. The character at this offset is not included.",
+              "Zotero item key returned in the current request's PDF citation attachment context.",
+            ),
+          textVersion: z
+            .string()
+            .regex(/^sha256:[0-9a-f]{64}$/)
+            .describe(
+              "The textVersion returned by find_pdf_text. Copy it unchanged.",
+            ),
+          quote: z
+            .string()
+            .min(1)
+            .max(MAX_READ_RANGE_CHARS)
+            .describe(
+              "The smallest complete supporting sentence, formula block, theorem or definition item, or bullet item copied exactly from find_pdf_text sourceText.",
+            ),
+          sourceText: z
+            .string()
+            .min(1)
+            .max(MAX_SOURCE_TEXT_CHARS)
+            .optional()
+            .describe(
+              "The unchanged sourceText returned by find_pdf_text. Omit it unless the quote occurs multiple times in the PDF.",
             ),
         }),
       },
@@ -281,13 +302,16 @@ function summarizePdfCitationToolArgs(
   copyString(args, summary, "attachmentKey");
   if (typeof args.query === "string") {
     summary.queryLength = args.query.length;
-    summary.queryPreview = previewText(args.query);
   }
   if (typeof args.normalize === "boolean") {
     summary.normalize = args.normalize;
   }
-  copyNumber(args, summary, "start");
-  copyNumber(args, summary, "end");
+  if (typeof args.quote === "string") {
+    summary.quoteLength = args.quote.length;
+  }
+  if (typeof args.sourceText === "string") {
+    summary.sourceTextLength = args.sourceText.length;
+  }
   if (Object.keys(summary).length > 0) return summary;
   return { toolName };
 }
@@ -306,26 +330,20 @@ function summarizePdfCitationToolResult(
       ...(matches.length > 0
         ? {
             firstMatch: {
-              start: asNumber(firstMatch.start),
-              end: asNumber(firstMatch.end),
-              textLength:
-                typeof firstMatch.text === "string"
-                  ? firstMatch.text.length
+              sourceTextLength:
+                typeof firstMatch.sourceText === "string"
+                  ? firstMatch.sourceText.length
                   : undefined,
-              textPreview: previewText(firstMatch.text),
             },
           }
         : {}),
     };
   }
-  if (toolName === "read_pdf_text_range") {
+  if (toolName === "register_pdf_quote") {
     return {
       rangeId: typeof result.rangeId === "string" ? result.rangeId : undefined,
       textVersion: shortTextVersion(result.textVersion),
-      start: asNumber(result.start),
-      end: asNumber(result.end),
       textLength: typeof result.text === "string" ? result.text.length : 0,
-      textPreview: previewText(result.text),
       beforeLength:
         typeof result.before === "string" ? result.before.length : 0,
       afterLength: typeof result.after === "string" ? result.after.length : 0,
@@ -350,7 +368,7 @@ function summarizePdfCitationToolError(
 
 export async function findPdfText(args: FindPdfTextArgs): Promise<{
   textVersion: string;
-  matches: PdfTextMatch[];
+  matches: Array<{ sourceText: string }>;
 }> {
   const snapshot = await getAttachmentTextSnapshot(
     args.libraryID,
@@ -375,7 +393,99 @@ export async function findPdfText(args: FindPdfTextArgs): Promise<{
   );
   return {
     textVersion: snapshot.textVersion,
-    matches,
+    matches: matches.map((match) => ({
+      sourceText: `${match.before}${match.text}${match.after}`,
+    })),
+  };
+}
+
+export function locateExactPdfQuote(
+  text: string,
+  quote: string,
+  sourceText?: string,
+): { start: number; end: number } {
+  if (!quote.trim()) {
+    throw new Error("Quote is empty.");
+  }
+  if (quote.length > MAX_READ_RANGE_CHARS) {
+    throw new Error("Quote exceeds the maximum citation length.");
+  }
+
+  if (sourceText === undefined) {
+    const quoteMatches = exactOccurrenceStarts(text, quote, 2);
+    if (quoteMatches.length === 0) {
+      throw new Error("Quote was not found in the PDF text.");
+    }
+    if (quoteMatches.length > 1) {
+      throw new Error(
+        "Quote occurs multiple times in the PDF text. Retry with the source text returned by find_pdf_text.",
+      );
+    }
+    return {
+      start: quoteMatches[0],
+      end: quoteMatches[0] + quote.length,
+    };
+  }
+
+  const sourceMatches = exactOccurrenceStarts(text, sourceText, 2);
+  if (sourceMatches.length === 0) {
+    throw new Error("Source text was not found in the PDF text.");
+  }
+  if (sourceMatches.length > 1) {
+    throw new Error(
+      "Source text occurs multiple times in the PDF text. Use a longer source text.",
+    );
+  }
+  const quoteMatches = exactOccurrenceStarts(sourceText, quote, 2);
+  if (quoteMatches.length === 0) {
+    throw new Error(
+      "Quote is not an exact substring of the supplied source text.",
+    );
+  }
+  if (quoteMatches.length > 1) {
+    throw new Error(
+      "Quote occurs multiple times in the supplied source text. Use a narrower source or a longer exact quote.",
+    );
+  }
+  const start = sourceMatches[0] + quoteMatches[0];
+  return { start, end: start + quote.length };
+}
+
+export async function registerPdfQuote(args: RegisterPdfQuoteArgs): Promise<{
+  textVersion: string;
+  start: number;
+  end: number;
+  text: string;
+  before: string;
+  after: string;
+}> {
+  const snapshot = await getAttachmentTextSnapshot(
+    args.libraryID,
+    args.attachmentKey,
+  );
+  if (snapshot.textVersion !== args.textVersion) {
+    throw new Error("PDF text changed after find_pdf_text. Search again.");
+  }
+  const { start, end } = locateExactPdfQuote(
+    snapshot.text,
+    args.quote,
+    args.sourceText,
+  );
+  const range = sliceWithContext(
+    snapshot.text,
+    start,
+    end,
+    DEFAULT_CONTEXT_CHARS,
+    DEFAULT_CONTEXT_CHARS,
+  );
+  if (range.text !== args.quote) {
+    throw new Error("Registered quote does not match the PDF text.");
+  }
+  return {
+    textVersion: snapshot.textVersion,
+    start,
+    end,
+    ...range,
   };
 }
 
@@ -415,10 +525,22 @@ export async function normalizePdfCitationBlocks(
   const warnings: string[] = [];
   let normalizedCount = 0;
   let droppedCount = 0;
-  for (const match of findPdfCitationBlocks(text)) {
+  const blocks = [
+    ...findPdfCitationBlocks(text),
+    ...findLegacyPdfCitationPipeBlocks(text),
+  ].sort((left, right) => left.index - right.index);
+  for (const match of blocks) {
     const { fullBlock, rawJson, index, hasNestedCitation } = match;
     const displayText = match.displayText.trim();
     try {
+      if ("isLegacyPipe" in match) {
+        throw new Error(
+          "Legacy PDF citation pipe block is not accepted in new responses.",
+        );
+      }
+      if (!match.isClosed) {
+        throw new Error("PDF citation block is missing its closing marker.");
+      }
       if (options.allowCitationBlocks === false) {
         throw new Error(
           "PDF citation block was returned without PDF tool use.",
@@ -456,6 +578,9 @@ export async function normalizePdfCitationBlocks(
         const locator = parseLocator(parsed?.locator);
         if (!locator) {
           throw new Error("Missing or invalid locator.");
+        }
+        if (!locator.textVersion) {
+          throw new Error("PDF citation locator is missing textVersion.");
         }
         warnings.push("Legacy PDF citation locator block normalized.");
         normalized = await normalizeLocator(locator);
@@ -517,16 +642,11 @@ export async function normalizePdfCitationBlocks(
 
 export function findPdfCitationBlocks(text: string): PdfCitationBlockMatch[] {
   const blocks: PdfCitationBlockMatch[] = [];
-  const linePattern = /[^\n]*(?:\n|$)/g;
-  const lines: Array<{ text: string; start: number; end: number }> = [];
-  for (const match of text.matchAll(linePattern)) {
-    const line = match[0];
-    if (!line) continue;
-    const start = match.index || 0;
-    lines.push({ text: line, start, end: start + line.length });
-  }
+  const lines = splitTextLines(text);
+  const fencedLines = findFencedCodeLines(lines);
 
   for (let i = 0; i < lines.length; i++) {
+    if (fencedLines.has(i)) continue;
     const startLine = lines[i];
     const startMatch = startLine.text.match(/:::\s*citation\s+({[^\n]+})\s*$/);
     if (!startMatch) continue;
@@ -535,6 +655,7 @@ export function findPdfCitationBlocks(text: string): PdfCitationBlockMatch[] {
     let endLineIndex = -1;
     let hasNestedCitation = false;
     for (let j = i + 1; j < lines.length; j++) {
+      if (fencedLines.has(j)) continue;
       const trimmed = lines[j].text.trim();
       if (/^::: citation\s+{[^\n]+}$/.test(trimmed)) {
         hasNestedCitation = true;
@@ -554,10 +675,106 @@ export function findPdfCitationBlocks(text: string): PdfCitationBlockMatch[] {
       displayText: text.slice(displayStart, displayEnd),
       index: blockStart,
       hasNestedCitation,
+      isClosed: endLineIndex >= 0,
     });
     i = endLineIndex >= 0 ? endLineIndex : lines.length;
   }
   return blocks;
+}
+
+function findLegacyPdfCitationPipeBlocks(
+  text: string,
+): Array<PdfCitationBlockMatch & { isLegacyPipe: true }> {
+  const blocks: Array<PdfCitationBlockMatch & { isLegacyPipe: true }> = [];
+  const lines = splitTextLines(text);
+  const fencedLines = findFencedCodeLines(lines);
+
+  for (let i = 0; i < lines.length; i++) {
+    if (fencedLines.has(i)) continue;
+    const startLine = lines[i];
+    const startMatch = startLine.text.match(
+      /:::\s*citation\s+([^\n]*\|[^\n]*)\s*$/,
+    );
+    if (!startMatch || isJsonObject(startMatch[1].trim())) continue;
+    const blockStart = startLine.start + (startMatch.index || 0);
+    let endLineIndex = -1;
+    for (let j = i + 1; j < lines.length; j++) {
+      if (fencedLines.has(j)) continue;
+      if (lines[j].text.trim() === ":::") {
+        endLineIndex = j;
+        break;
+      }
+    }
+    const blockEnd =
+      endLineIndex >= 0 ? lines[endLineIndex].end : startLine.end;
+    blocks.push({
+      fullBlock: text.slice(blockStart, blockEnd),
+      rawJson: "",
+      displayText: "",
+      index: blockStart,
+      hasNestedCitation: false,
+      isClosed: endLineIndex >= 0,
+      isLegacyPipe: true,
+    });
+    if (endLineIndex >= 0) i = endLineIndex;
+  }
+  return blocks;
+}
+
+interface TextLine {
+  text: string;
+  start: number;
+  end: number;
+}
+
+function splitTextLines(text: string): TextLine[] {
+  const linePattern = /[^\n]*(?:\n|$)/g;
+  const lines: TextLine[] = [];
+  for (const match of text.matchAll(linePattern)) {
+    const line = match[0];
+    if (!line) continue;
+    const start = match.index || 0;
+    lines.push({ text: line, start, end: start + line.length });
+  }
+  return lines;
+}
+
+function findFencedCodeLines(lines: TextLine[]): Set<number> {
+  const fencedLines = new Set<number>();
+  let fence: { character: string; length: number } | undefined;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].text;
+    if (!fence) {
+      const opening = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (!opening) continue;
+      fence = {
+        character: opening[1][0],
+        length: opening[1].length,
+      };
+      fencedLines.add(index);
+      continue;
+    }
+
+    fencedLines.add(index);
+    const closing = new RegExp(
+      `^ {0,3}${fence.character}{${fence.length},}\\s*$`,
+    );
+    if (closing.test(line)) {
+      fence = undefined;
+    }
+  }
+  return fencedLines;
+}
+
+function isJsonObject(value: string): boolean {
+  try {
+    const parsed = JSON.parse(value);
+    return Boolean(
+      parsed && typeof parsed === "object" && !Array.isArray(parsed),
+    );
+  } catch (_error) {
+    return false;
+  }
 }
 
 function findPdfFileForLocator(
@@ -583,12 +800,13 @@ export async function recoverPdfCitationText(locator: PdfTextLocator): Promise<{
     start: locator.start,
     end: locator.end,
   });
+  const isStale = Boolean(
+    locator.textVersion && locator.textVersion !== range.textVersion,
+  );
   return {
-    text: range.text,
+    text: isStale ? "" : range.text,
     textVersion: range.textVersion,
-    isStale: Boolean(
-      locator.textVersion && locator.textVersion !== range.textVersion,
-    ),
+    isStale,
   };
 }
 
@@ -629,6 +847,11 @@ export function parsePdfCitationLocator(value: string): PdfTextLocator | null {
 async function normalizeLocator(
   locator: PdfTextLocator,
 ): Promise<PdfTextLocator> {
+  if (locator.start < 0 || locator.end <= locator.start) {
+    throw new Error(
+      `Invalid PDF citation range: start=${locator.start}, end=${locator.end}`,
+    );
+  }
   const snapshot = await getAttachmentTextSnapshot(
     locator.libraryID,
     locator.attachmentKey,
@@ -670,7 +893,9 @@ function parseLocator(value: unknown): PdfTextLocator | null {
     !Number.isInteger(record.libraryID) ||
     typeof record.attachmentKey !== "string" ||
     !Number.isInteger(record.start) ||
-    !Number.isInteger(record.end)
+    !Number.isInteger(record.end) ||
+    (record.start as number) < 0 ||
+    (record.end as number) <= (record.start as number)
   ) {
     return null;
   }
@@ -742,6 +967,23 @@ function exactFind(
     fromIndex = Math.max(end, start + 1);
   }
   return matches;
+}
+
+function exactOccurrenceStarts(
+  text: string,
+  value: string,
+  limit: number,
+): number[] {
+  if (!value || limit <= 0) return [];
+  const starts: number[] = [];
+  let fromIndex = 0;
+  while (starts.length < limit) {
+    const start = text.indexOf(value, fromIndex);
+    if (start === -1) break;
+    starts.push(start);
+    fromIndex = start + 1;
+  }
+  return starts;
 }
 
 function normalizedFind(
