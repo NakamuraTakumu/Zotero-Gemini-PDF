@@ -1,7 +1,5 @@
 import { ChatPane } from "./reader/chatPane";
 import { getLocaleID } from "../utils/locale";
-import { PREF_CHAT_PANEL_HEIGHT } from "../utils/constants";
-import { setPref } from "../utils/prefs";
 
 import { buildReaderItemPaneBodyXhtml } from "./reader/itemPaneMarkup";
 import { dispatchRequestStatusChangedEvent } from "./reader/requestStatusEvents";
@@ -133,121 +131,13 @@ export class ReaderItemPaneFactory {
     });
     doc.documentElement?.appendChild(katexStyles);
 
-    ReaderItemPaneFactory.registerDocumentChatResizer(win);
+    ReaderItemPaneFactory.removeLegacyDocumentChatResizer(win);
   }
 
-  private static registerDocumentChatResizer(win: _ZoteroTypes.MainWindow) {
+  private static removeLegacyDocumentChatResizer(win: _ZoteroTypes.MainWindow) {
     const key = "__askMyPaperChatResizerAbortController";
     const existingController = (win as any)[key] as AbortController | undefined;
     existingController?.abort();
-
-    const abortController = new win.AbortController();
-    (win as any)[key] = abortController;
-
-    const cssPixels = (value: string | undefined): number => {
-      const parsed = Number.parseFloat(value || "0");
-      return Number.isFinite(parsed) ? parsed : 0;
-    };
-
-    const clampHeight = (
-      chatContainer: HTMLElement,
-      chatMessages: HTMLElement,
-      requestedHeight: number,
-    ): number => {
-      const minHeight = 50;
-      const containerStyle = win.getComputedStyle(chatContainer);
-      const containerPadding =
-        cssPixels(containerStyle?.paddingTop) +
-        cssPixels(containerStyle?.paddingBottom);
-      const containerContentHeight =
-        chatContainer.clientHeight - containerPadding;
-      const messagesStyle = win.getComputedStyle(chatMessages);
-      const messagesMargins =
-        cssPixels(messagesStyle?.marginTop) +
-        cssPixels(messagesStyle?.marginBottom);
-      const reservedHeight = Array.from(chatContainer.children).reduce(
-        (total, child) => {
-          if (child === chatMessages || !(child instanceof win.HTMLElement)) {
-            return total;
-          }
-          const childStyle = win.getComputedStyle(child);
-          return (
-            total +
-            child.getBoundingClientRect().height +
-            cssPixels(childStyle?.marginTop) +
-            cssPixels(childStyle?.marginBottom)
-          );
-        },
-        0,
-      );
-      const containerMaxHeight =
-        containerContentHeight - reservedHeight - messagesMargins;
-      const containerRect = chatContainer.getBoundingClientRect();
-      const viewportMaxHeight =
-        win.innerHeight -
-        containerRect.top -
-        reservedHeight -
-        messagesMargins -
-        8;
-      const maxHeight = Math.max(
-        containerMaxHeight,
-        viewportMaxHeight,
-        requestedHeight,
-      );
-      return Math.round(
-        Math.min(Math.max(requestedHeight, minHeight), maxHeight),
-      );
-    };
-
-    win.document.addEventListener(
-      "mousedown",
-      (event: MouseEvent) => {
-        const target = event.target as Element | null;
-        const chatResizer = target?.closest(
-          "#chat-resizer",
-        ) as HTMLElement | null;
-        const chatContainer = chatResizer?.closest(
-          ".chat-container",
-        ) as HTMLElement | null;
-        const chatMessages = chatContainer?.querySelector(
-          "#chat-messages",
-        ) as HTMLElement | null;
-
-        if (!chatResizer || !chatContainer || !chatMessages) {
-          return;
-        }
-
-        event.preventDefault();
-        const startY = event.clientY;
-        const startHeight = chatMessages.getBoundingClientRect().height;
-
-        const doDrag = (dragEvent: MouseEvent) => {
-          const newHeight = startHeight + (dragEvent.clientY - startY);
-          chatMessages.style.height = `${clampHeight(
-            chatContainer,
-            chatMessages,
-            newHeight,
-          )}px`;
-          chatMessages.style.maxHeight = "none";
-        };
-
-        const stopDrag = () => {
-          win.document.removeEventListener("mousemove", doDrag, false);
-          win.document.removeEventListener("mouseup", stopDrag, false);
-          const effectiveHeight = clampHeight(
-            chatContainer,
-            chatMessages,
-            chatMessages.getBoundingClientRect().height,
-          );
-          chatMessages.style.height = `${effectiveHeight}px`;
-          chatMessages.style.maxHeight = "none";
-          setPref(PREF_CHAT_PANEL_HEIGHT, effectiveHeight);
-        };
-
-        win.document.addEventListener("mousemove", doDrag, false);
-        win.document.addEventListener("mouseup", stopDrag, false);
-      },
-      { signal: abortController.signal },
-    );
+    delete (win as any)[key];
   }
 }

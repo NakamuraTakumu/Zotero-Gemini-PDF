@@ -8,6 +8,11 @@ import { PdfFileSyncManager } from "./pdfSyncManager";
 import GlobalChatManager from "../globalChatManager"; // Import GlobalChatManager
 import { SendMessageUseCase } from "./sendMessageUseCase";
 import { dispatchRequestStatusChangedEvent } from "./requestStatusEvents";
+import {
+  clampChatPanelHeight,
+  getChatPanelHeightMaximum,
+  getSavedChatPanelHeight,
+} from "./chatPanelHeight";
 
 /**
  * Manages the state and behavior of a single chat pane in the Zotero reader.
@@ -39,6 +44,10 @@ export class ChatPane {
   private _boundHandleNewChat!: () => Promise<void>;
   private _boundHandleResize!: (e: MouseEvent) => void;
   private _boundHandleSessionControlInteraction!: (e: Event) => void;
+  private _chatContainerResizeObserver?: ResizeObserver;
+  private _chatPanelHeightRestoreFrame?: number;
+  private _isChatPanelResizeDragging = false;
+  private _activeChatPanelResizeCleanup?: () => void;
 
   constructor(body: HTMLElement) {
     this.paneId = Zotero.Utilities.randomString(8);
@@ -298,6 +307,11 @@ export class ChatPane {
       this._boundHandleSessionControlInteraction,
       true,
     );
+    this._observeChatContainerResize();
+    // Apply the saved value immediately. The later animation frame adjusts it
+    // only after a visible pane has reliable geometry.
+    this._restoreChatPanelHeight();
+    this._scheduleChatPanelHeightRestore();
   }
 
   private _handleSessionControlInteraction(event: Event): void {
@@ -361,23 +375,57 @@ export class ChatPane {
     );
     this.zoteroContext.actualParentItem = actualParentItem;
 
-    const chatMessages = this.uiElements.body.querySelector(
-      "#chat-messages",
-    ) as HTMLDivElement;
-    if (chatMessages) {
-      const savedHeight = getPref(PREF_CHAT_PANEL_HEIGHT) as number;
-      if (savedHeight) {
-        chatMessages.style.height = `${this._clampChatMessagesHeight(savedHeight, false)}px`;
-        chatMessages.style.maxHeight = "none";
-      }
-    }
+    this._scheduleChatPanelHeightRestore();
   }
 
-  private _clampChatMessagesHeight(
-    requestedHeight: number,
-    allowContentGrowth = true,
-  ): number {
-    const minHeight = 50;
+  private _scheduleChatPanelHeightRestore() {
+    const paneWindow = this.uiElements.doc.defaultView;
+    if (!paneWindow || this._isChatPanelResizeDragging) {
+      return;
+    }
+    if (this._chatPanelHeightRestoreFrame !== undefined) {
+      paneWindow.cancelAnimationFrame(this._chatPanelHeightRestoreFrame);
+    }
+    this._chatPanelHeightRestoreFrame = paneWindow.requestAnimationFrame(() => {
+      this._chatPanelHeightRestoreFrame = undefined;
+      this._restoreChatPanelHeight();
+    });
+  }
+
+  private _restoreChatPanelHeight() {
+    const savedHeight = getSavedChatPanelHeight(
+      getPref(PREF_CHAT_PANEL_HEIGHT),
+    );
+    if (savedHeight === undefined) {
+      return;
+    }
+    const chatMessages = this.uiElements.body.querySelector(
+      "#chat-messages",
+    ) as HTMLDivElement | null;
+    if (!chatMessages) {
+      return;
+    }
+    chatMessages.style.height = `${this._clampChatMessagesHeight(savedHeight)}px`;
+    chatMessages.style.maxHeight = "none";
+  }
+
+  private _observeChatContainerResize() {
+    const paneWindow = this.uiElements.doc.defaultView;
+    const chatContainer = this.uiElements.body.querySelector(
+      ".chat-container",
+    ) as HTMLDivElement | null;
+    if (!paneWindow || !chatContainer || !paneWindow.ResizeObserver) {
+      return;
+    }
+    this._chatContainerResizeObserver?.disconnect();
+    const resizeObserver = new paneWindow.ResizeObserver(() => {
+      this._scheduleChatPanelHeightRestore();
+    });
+    this._chatContainerResizeObserver = resizeObserver;
+    resizeObserver.observe(chatContainer);
+  }
+
+  private _clampChatMessagesHeight(requestedHeight: number): number {
     const chatMessages = this.uiElements.body.querySelector(
       "#chat-messages",
     ) as HTMLDivElement | null;
@@ -386,28 +434,20 @@ export class ChatPane {
     ) as HTMLDivElement | null;
 
     if (!chatMessages || !chatContainer) {
-      return Math.max(minHeight, Math.round(requestedHeight));
+      return clampChatPanelHeight(requestedHeight);
     }
 
     const maxHeight = this._getMaxChatMessagesHeight(
       chatContainer,
       chatMessages,
-      minHeight,
-      requestedHeight,
-      allowContentGrowth,
     );
-    return Math.round(
-      Math.min(Math.max(requestedHeight, minHeight), maxHeight),
-    );
+    return clampChatPanelHeight(requestedHeight, maxHeight);
   }
 
   private _getMaxChatMessagesHeight(
     chatContainer: HTMLDivElement,
     chatMessages: HTMLDivElement,
-    minHeight: number,
-    requestedHeight: number,
-    allowContentGrowth: boolean,
-  ): number {
+  ): number | undefined {
     const containerStyle =
       this.uiElements.doc.defaultView?.getComputedStyle(chatContainer);
     const containerPadding =
@@ -444,13 +484,18 @@ export class ChatPane {
       containerContentHeight - reservedHeight - messagesMargins;
     const containerRect = chatContainer.getBoundingClientRect();
     const viewportHeight = this.uiElements.doc.defaultView?.innerHeight ?? 0;
+    if (
+      chatContainer.clientHeight <= 0 ||
+      containerRect.height <= 0 ||
+      viewportHeight <= 0 ||
+      containerRect.bottom <= 0 ||
+      containerRect.top >= viewportHeight
+    ) {
+      return undefined;
+    }
     const viewportMaxHeight =
       viewportHeight - containerRect.top - reservedHeight - messagesMargins - 8;
-    const boundedMaxHeight = Math.max(containerMaxHeight, viewportMaxHeight);
-    const maxHeight = allowContentGrowth
-      ? Math.max(boundedMaxHeight, requestedHeight)
-      : boundedMaxHeight;
-    return Math.max(minHeight, Math.floor(maxHeight));
+    return getChatPanelHeightMaximum(containerMaxHeight, viewportMaxHeight);
   }
 
   private _cssPixels(value: string | undefined): number {
@@ -546,10 +591,12 @@ export class ChatPane {
 
   private _handleResize(e: MouseEvent) {
     e.preventDefault();
+    this._cancelActiveChatPanelResize();
     const { doc, body } = this.uiElements;
     const startY = e.clientY;
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
     const startHeight = chatMessages.getBoundingClientRect().height;
+    this._isChatPanelResizeDragging = true;
 
     const doDrag = (e: MouseEvent) => {
       const newHeight = startHeight + (e.clientY - startY);
@@ -558,18 +605,28 @@ export class ChatPane {
     };
 
     const stopDrag = () => {
-      doc.removeEventListener("mousemove", doDrag, false);
-      doc.removeEventListener("mouseup", stopDrag, false);
+      this._cancelActiveChatPanelResize();
       const effectiveHeight = this._clampChatMessagesHeight(
         chatMessages.getBoundingClientRect().height,
       );
       chatMessages.style.height = `${effectiveHeight}px`;
       chatMessages.style.maxHeight = "none";
+      this._isChatPanelResizeDragging = false;
       setPref(PREF_CHAT_PANEL_HEIGHT, effectiveHeight);
     };
 
+    this._activeChatPanelResizeCleanup = () => {
+      doc.removeEventListener("mousemove", doDrag, false);
+      doc.removeEventListener("mouseup", stopDrag, false);
+    };
     doc.addEventListener("mousemove", doDrag, false);
     doc.addEventListener("mouseup", stopDrag, false);
+  }
+
+  private _cancelActiveChatPanelResize() {
+    this._activeChatPanelResizeCleanup?.();
+    this._activeChatPanelResizeCleanup = undefined;
+    this._isChatPanelResizeDragging = false;
   }
 
   private async _handleAskMyPaperAction(event: CustomEvent) {
@@ -598,6 +655,7 @@ export class ChatPane {
   }
 
   public destroy() {
+    this._cancelActiveChatPanelResize();
     // Remove global listener
     if (this.runtimeState.eventHandler) {
       Zotero.getMainWindow().document.removeEventListener(
@@ -611,7 +669,7 @@ export class ChatPane {
     const chatMessages = body.querySelector("#chat-messages") as HTMLDivElement;
     const chatInput = body.querySelector("#chat-input") as HTMLTextAreaElement;
     const sendButton = body.querySelector("#send-button") as HTMLButtonElement;
-    const chatResizer = body.querySelector(".chat-resizer") as HTMLDivElement;
+    const chatResizer = body.querySelector("#chat-resizer") as HTMLDivElement;
     const newChatButton = body.querySelector(
       "#new-chat-button",
     ) as HTMLButtonElement;
@@ -643,6 +701,11 @@ export class ChatPane {
         true,
       );
     }
+    const paneWindow = this.uiElements.doc.defaultView;
+    if (paneWindow && this._chatPanelHeightRestoreFrame !== undefined) {
+      paneWindow.cancelAnimationFrame(this._chatPanelHeightRestoreFrame);
+    }
+    this._chatContainerResizeObserver?.disconnect();
     // Destroy the chatSessionManager instance
     if (this.chatSessionManager) {
       this.chatSessionManager.destroy();

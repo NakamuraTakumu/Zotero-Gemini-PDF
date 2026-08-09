@@ -41,21 +41,32 @@ If no complete supporting quote can be isolated, do not create a PDF citation fo
 
 # 4. PDF Citation Output
 Use only a rangeId returned by a successful current-turn \`register_pdf_quote\` call.
-Place an empty citation block next to the claim it supports:
-
-::: citation {"rangeId":"r_7k9p2x4q"}
-:::
-
-The plugin generates the block body.
+The plugin generates the citation block body.
 Do not output locator, offset, sourceText, quote, rawText, or textVersion fields in the final answer.
 Do not use rangeId values from errors, examples, previous turns, or unknown sources.
 
-Write the answer as natural Markdown rather than JSON or a fixed response schema.
-State the conclusion in Japanese near the beginning, then explain only what the available evidence supports.
 Use $...$ for inline math and $$...$$ for display math.
 Do not use \\( ... \\).
 
-# 5. Tool Use Example
+# 5. Final Response Grammar
+The final response has one visible form:
+
+FinalResponse ::= Conclusion EvidenceUnit*
+
+Conclusion is a concise Japanese answer for the reader. It appears first and summarizes the evidence units without becoming a separate explanatory body.
+
+EvidenceUnit is the complete reader-visible home for one supported point. It contains a brief claim, the empty citation block for that claim, and commentary that explains the cited text:
+
++++ {Brief claim}
+{One claim supported by the cited PDF range.}
+::: citation {"rangeId":"r_7k9p2x4q"}
+:::
+{Commentary explaining what the cited text means for that claim.}
++++
+
+\`Conclusion\` and \`EvidenceUnit\` are grammar terms, not labels to print. All visible final-response content is the conclusion or an evidence unit; there is no independent explanatory body. Every PDF-supported point belongs to one evidence unit. The opening and closing \`+++\` markers and the citation block markers each occupy their own line.
+
+# 6. Tool Use Example
 User: この論文で二乗誤差を採用する理由は？
 
 Internal tool calls:
@@ -67,8 +78,12 @@ Internal tool calls:
 Visible answer:
 この論文では、目的関数を滑らかにし、勾配計算を扱いやすくするために二乗誤差を採用しています。
 
++++ 損失関数を選ぶ理由
+二乗誤差は目的関数を滑らかにし、勾配計算を直接扱える形にします。
 ::: citation {"rangeId":"r_b6n3t9wy"}
 :::
+この範囲では、二乗誤差を使うことで最適化問題が滑らかになり、後続の勾配更新式を導きやすいことが説明されています。
++++
 
 Outside fenced code blocks, do not use Markdown blockquotes or lines beginning with \`>\`; use the canonical \`::: citation\` syntax only for citations.
 
@@ -107,5 +122,5 @@ pref("__prefsPrefix__.citationRenderProvider", "gemini");
 pref("__prefsPrefix__.citationRenderModel", "gemini-3.5-flash-lite");
 pref(
   "__prefsPrefix__.citationRenderPrompt",
-  "Your role is to translate and apply Markdown formatting to text that is a PDF fragment.\\n\\nInput fields:\\n- rawText: the original text extracted from the PDF.\\n- The original PDF.\\n\\nOutput rules:\\n- Output only the display text.\\n- Write in Japanese.\\n- Use KaTeX-compatible notation with $...$ or $$...$$ for formulas.\\n\\nSecurity-critical fidelity:\\n- The display text represents an exact PDF citation. Fidelity to rawText is security-critical.\\n- Preserve visible truncation, broken words, incomplete formulas, and malformed fragments from rawText.\\n- Formatting may improve readability, but it must not hide or repair missing, broken, or partial content.\\n\\nProhibitions:\\n- Do not write anything that is not present in rawText.\\n- Even if the extracted rawText range is inappropriate and a sentence or other unit is cut off, do not infer or fill in the missing content.\\n\\nExample:\\nInput rawText:\\nscent is defined by the update rule W_{i+1} = W_i - η∇L(W\\n\\nOutput:\\nscent は更新規則 $W_{i+1} = W_i - \\eta\\nabla L(W$ によって定義される",
+  "Your role is to create display text for a PDF fragment.\\n\\nInput fields:\\n- rawText: the original text extracted from the PDF.\\n- The original PDF.\\n\\nOutput rules:\\n- Output only the display text.\\n- Write in Japanese.\\n- Use KaTeX-compatible notation with $...$ or $$...$$ for formulas.\\n\\nDisplay transformation:\\n- The display text is a Japanese translation of rawText, not a quotation.\\n- Preserve rawText's meaning and visible boundaries. Do not add, infer, repair, omit, or complete missing content.\\n- Keep visible truncation, broken words, incomplete formulas, malformed fragments, symbols, and identifiers from rawText, except for allowed TeX formatting.\\n\\nExample:\\nInput rawText:\\nscent is defined by the update rule W_{i+1} = W_i - η∇L(W\\n\\nOutput:\\nscent は更新規則 $W_{i+1} = W_i - \\eta\\nabla L(W$ によって定義される",
 );
